@@ -78,6 +78,7 @@ struct ActivityConfig: Codable {
 
 struct MotionConfig: Codable {
     var effect: String          // 目前只有 "floating"
+    /// 一台「主螢幕大小的面積」裡的粒子數（密度），多螢幕時依世界面積自動放大
     var particleCount: Int
     var fps: Int                // 60Hz 螢幕實際只有 60/30/20/15 可用
     var colorA: String          // 兩極色，粒子色相在兩者間分布

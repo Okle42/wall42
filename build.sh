@@ -4,6 +4,6 @@ set -e
 cd "$(dirname "$0")"
 swiftc -O -swift-version 5 \
   -o wall42 \
-  Sources/Config.swift Sources/ControlPanel.swift Sources/MenuBar.swift Sources/Renderer.swift Sources/main.swift \
+  Sources/Config.swift Sources/ControlPanel.swift Sources/MenuBar.swift Sources/Renderer.swift Sources/World.swift Sources/main.swift \
   -framework Cocoa -framework MetalKit
 echo "build ok -> $(pwd)/wall42"
