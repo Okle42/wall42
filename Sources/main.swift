@@ -76,10 +76,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private(set) var surfaces: [Surface] = []
     private var device: MTLDevice!
-    /// 主螢幕那一份。選單列、面板讀設定與統計都看它（所有螢幕共用同一份設定）。
-    var renderer: Renderer! { (surfaces.first { $0.screen == NSScreen.main } ?? surfaces.first)?.renderer }
+    private var gpu: GPU!
+    /// 整片星空只有一份模擬，所有螢幕共用
+    private(set) var world: World!
+    /// 選單列、面板讀設定與統計的入口（名稱沿用舊版，實際就是共用的 World）
+    var renderer: World! { world }
 
     private var lastReport = CFAbsoluteTimeGetCurrent()
+    private var lastSteps = 0
     private var menuBar: MenuBarController?
     private var panel: ControlPanel?
     // 給選單列讀的即時狀態
@@ -107,11 +111,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard let device = MTLCreateSystemDefaultDevice() else { log("FATAL 沒有 Metal 裝置"); exit(1) }
         self.device = device
+        guard let g = GPU(device: device) else { log("FATAL shader／pipeline 建立失敗"); exit(1) }
+        gpu = g
+        world = World(device: device, config: cfg)
         rebuildSurfaces(cfg)
-        guard !surfaces.isEmpty else { log("FATAL 沒有可用的螢幕或 Renderer 初始化失敗"); exit(1) }
-        if let path = SNAPSHOT {
-            renderer.snapshotPath = path
-            renderer.snapshotAtFrame = envInt("WALL91_SNAPSHOT_FRAME") ?? 90
+        guard !surfaces.isEmpty else { log("FATAL 沒有可用的螢幕"); exit(1) }
+        if let path = SNAPSHOT, let r = surfaces.first?.renderer {
+            r.snapshotPath = path
+            r.snapshotAtFrame = envInt("WALL91_SNAPSHOT_FRAME") ?? 90
         }
 
         // 螢幕插拔、改解析度、排列變更時重建
@@ -122,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // 系統會連發好幾次，稍等穩定再重建
                 self.pendingRebuild?.cancel()
                 let w = DispatchWorkItem { [weak self] in
-                    guard let self = self, let cfg = self.renderer?.config else { return }
+                    guard let self = self, let cfg = self.world?.config else { return }
                     log(">>> 螢幕配置改變，重建")
                     self.rebuildSurfaces(cfg)
                 }
@@ -141,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        log("啟動 particles=\(cfg.motion.particleCount) fps=\(cfg.motion.fps) "
+        log("啟動 particles=\(cfg.motion.particleCount)/主螢幕面積（整片世界實際 \(world.drawCount) 顆） fps=\(cfg.motion.fps) "
             + "effect=\(cfg.motion.effect) 螢幕=" + surfaces.map { "\(Int($0.screen.frame.width))x\(Int($0.screen.frame.height))" }.joined(separator: ","))
         log("設定檔：\(Config.path.path)　（存檔後自動套用，不必重啟）")
 
@@ -151,18 +158,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var pendingRebuild: DispatchWorkItem?
+    /// 測試用：模擬「拔掉副螢幕」（debug-relayout 信號），驗證世界重建時粒子依比例保留
+    private var debugMainOnly = false
 
     /// 依目前的螢幕清單建立每個螢幕的視窗。沿用同一個 displayID 的 renderer，
     /// 這樣改解析度或插拔另一台時，原本螢幕上的粒子不會重來。
     func rebuildSurfaces(_ cfg: Config) {
-        var old: [CGDirectDisplayID: Renderer] = [:]
-        for sf in surfaces { old[sf.displayID] = sf.renderer; sf.close() }
+        for sf in surfaces { sf.close() }
         surfaces.removeAll()
-        for screen in (ONLY_MAIN ? Array(NSScreen.screens.prefix(1)) : NSScreen.screens) {
-            let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-            guard let r = old[id] ?? Renderer(device: device, config: cfg) else {
-                log("⚠ 螢幕 \(id) 的 Renderer 初始化失敗，略過"); continue
-            }
+        let screens = (ONLY_MAIN || debugMainOnly) ? Array(NSScreen.screens.prefix(1)) : NSScreen.screens
+        guard !screens.isEmpty else { return }
+
+        // 世界＝所有螢幕的聯合矩形（含上下錯位）。Cocoa 是 y 向上，世界座標翻成 y 向下。
+        let union = screens.dropFirst().reduce(screens[0].frame) { $0.union($1.frame) }
+        func slot(_ s: NSScreen) -> ScreenSlot {
+            let f = s.frame, v = s.visibleFrame
+            return ScreenSlot(origin: SIMD2(Float(f.minX - union.minX), Float(union.maxY - f.maxY)),
+                              size: SIMD2(Float(f.width), Float(f.height)),
+                              visibleTop: Float(union.maxY - v.maxY),
+                              visibleBottom: Float(union.maxY - v.minY))
+        }
+        let main = screens[0].frame       // screens[0] 永遠是有選單列的主螢幕
+        world.setLayout(screens.map(slot), mainArea: Float(main.width * main.height))
+        world.stepInterval = 1.0 / Double(max(1, cfg.motion.fps))
+        log(String(format: "世界 %.0fx%.0f（主螢幕面積的 %.2f 倍）粒子 %d 顆",
+                   world.size.x, world.size.y, world.areaScale, world.drawCount))
+
+        for screen in screens {
+            let r = Renderer(gpu: gpu, world: world)
+            let sl = slot(screen)
+            r.viewOrigin = sl.origin
+            r.viewSize = sl.size
+            r.pxScale = Float(screen.backingScaleFactor)
             let sf = Surface(screen: screen, renderer: r, device: device, fps: cfg.motion.fps)
             surfaces.append(sf)
             sf.window.orderFront(nil)
@@ -177,7 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 設定套到每個螢幕
     func applyToAll(_ cfg: Config) {
-        for sf in surfaces { sf.renderer.apply(cfg) }
+        world.apply(cfg)
         syncFPSIfNeeded(cfg)
     }
 
@@ -226,6 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for sf in surfaces where sf.view.preferredFramesPerSecond != cfg.motion.fps {
             sf.view.preferredFramesPerSecond = cfg.motion.fps
         }
+        world.stepInterval = 1.0 / Double(max(1, cfg.motion.fps))
     }
 
     /// 從選單列手動暫停／繼續。與遮擋暫停獨立，兩者任一成立就不畫。
@@ -243,7 +271,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastPauseChange = CFAbsoluteTimeGetCurrent()
         sf.view.isPaused = stop
         if stop { sf.view.releaseDrawables() }
-        else { sf.renderer.resetClock() }
+        else if !surfaces.contains(where: { $0 !== sf && !$0.view.isPaused }) {
+            world.resetClock()     // 其他螢幕都停著：模擬也停了，從現在接續
+        }
     }
 
     // ── 螢幕休眠／鎖定／螢幕保護程式 ────────────────────────────
@@ -395,12 +425,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 sf.renderer.snapshotPath = (dir as NSString).appendingPathComponent("\(tag)_\(sf.displayID).png")
             }
             log(">>> snapshot -> \(dir)")
+        case "debug-relayout":
+            // 測試用：{"kind":"debug-relayout","mainOnly":true} 模擬只剩主螢幕，false 還原
+            debugMainOnly = (o["mainOnly"] as? Bool) ?? false
+            log(">>> debug-relayout mainOnly=\(debugMainOnly)")
+            rebuildSurfaces(world.config)
         case "debug-suspend":
             // 測試用：直接走休眠／鎖定的同一條路徑。{"kind":"debug-suspend","reason":"locked","on":true}
             setSuspended((o["reason"] as? String) ?? "debug", (o["on"] as? Bool) ?? true)
         case "insight":
             let st = Float((o["strength"] as? Double) ?? 1.0)
-            for sf in surfaces { sf.renderer.triggerInsight(st) }
+            world.triggerInsight(st)
             log(">>> insight 觸發 strength=\(st)")
         default:
             log("⚠ 不認得的信號：\(kind)")
@@ -498,7 +533,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 依設定把系統負載（或手動值）轉成 0..1 的活動度，並做指數平滑。
     private func updateActivity() {
-        let a = renderer.config.motion.activity ?? .default
+        let a = world.config.motion.activity ?? .default
         let src = a.source ?? "system"
         var target: Float = 0
 
@@ -506,7 +541,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let o = activityOverride {
             if Date() < o.until {
                 smoothedActivity = smoothedActivity * 0.55 + o.level * 0.45
-                for sf in surfaces { sf.renderer.activity = smoothedActivity }
+                world.activity = smoothedActivity
                 return
             }
             activityOverride = nil          // 到期自動回復
@@ -523,7 +558,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let k = max(0, min(0.99, a.smoothing ?? 0.85))
         smoothedActivity = smoothedActivity * k + target * (1 - k)
-        for sf in surfaces { sf.renderer.activity = smoothedActivity }
+        world.activity = smoothedActivity
     }
 
     private func cpuSeconds() -> Double {
@@ -548,13 +583,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let now = CFAbsoluteTimeGetCurrent()
         let dt = now - lastReport; lastReport = now
         // fps 以畫最多的那個螢幕為準（各螢幕同一個 fps 設定）
-        var delta = 0, links = 0
+        var delta = 0
+        var perScreen: [String] = []
         for sf in surfaces {
             let d = sf.renderer.frameCount - sf.lastFrames
             sf.lastFrames = sf.renderer.frameCount
             delta = max(delta, d)
-            links += sf.occluded ? 0 : sf.renderer.lastLinkCount
+            perScreen.append(String(format: "%.0f", dt > 0 ? Double(d) / dt : 0))
         }
+        let links = world.lastLinkCount
+        let steps = world.stepCount - lastSteps
+        lastSteps = world.stepCount
         let fps = dt > 0 ? Double(delta) / dt : 0
 
         let c = cpuSeconds()
@@ -575,8 +614,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                        cpuPct, delta, verdict, mem))
         } else {
             let vis = surfaces.filter { !$0.occluded }.count
-            log(String(format: "visible   screens=%d/%d  fps=%.1f  cpu=%.2f%%  links=%d  act=%.2f  mem=%.1fMB",
-                       vis, surfaces.count, fps, cpuPct, links, renderer.activity, mem))
+            log(String(format: "visible   screens=%d/%d  fps=%.1f [%@]  steps=%d  cpu=%.2f%%  links=%d  act=%.2f  mem=%.1fMB",
+                       vis, surfaces.count, fps, perScreen.joined(separator: "/"), steps,
+                       cpuPct, links, world.activity, mem))
         }
     }
 
