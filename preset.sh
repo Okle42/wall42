@@ -1,7 +1,7 @@
 #!/bin/bash
 # 切換預設風格。切換前會先備份目前的設定。
 cd "$(dirname "$0")"
-CFG="$HOME/.config/wall91/config.json"
+CFG="$HOME/.config/wall42/config.json"
 
 CUR=$(./_current_preset.py 2>/dev/null)
 

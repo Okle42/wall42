@@ -3,13 +3,13 @@
 # requires-python = ">=3.10"
 # dependencies = ["mcp>=2,<3"]
 # ///
-"""wall91 MCP server：讓 AI 查詢並操控桌布層動態粒子。
+"""wall42 MCP server：讓 AI 查詢並操控桌布層動態粒子。
 
-控制介面就是設定檔本身 —— wall91 每秒檢查 config.json 的 mtime，
+控制介面就是設定檔本身 —— wall42 每秒檢查 config.json 的 mtime，
 改完 1 秒內自動套用，所以這裡不需要任何 IPC，寫檔就好。
 
-跟 cool91 的關係：cool91 管風扇與溫度（要不要開工），
-wall91 管的是「讓人看得出機器在忙」。兩者都讀系統負載但互不依賴。
+跟 cool42 的關係：cool42 管風扇與溫度（要不要開工），
+wall42 管的是「讓人看得出機器在忙」。兩者都讀系統負載但互不依賴。
 """
 from __future__ import annotations
 
@@ -25,19 +25,20 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 HOME = os.path.expanduser("~")
-CONFIG = os.path.join(HOME, ".config/wall91/config.json")
-LOG = os.path.join(HOME, "Library/Logs/wall91.log")
-PRESETS = os.path.join(HOME, "github-repos/wall91/presets")
-LABEL = "com.kang.wall91"
+CONFIG = os.path.join(HOME, ".config/wall42/config.json")
+LOG = os.path.join(HOME, "Library/Logs/wall42.log")
+# presets 跟著這支腳本所在的 repo 走，repo 搬家或改名都不會斷
+PRESETS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "presets")
+LABEL = "com.kang.wall42"
 
 mcp = MCPServer(
-    "wall91",
+    "wall42",
     instructions=(
-        "wall91 是桌布層動態粒子，被視窗完全遮擋時會停止繪製。"
-        "跑長任務前用 wall91_think 讓畫面忙起來（到期自動回復，不必記得關）；"
-        "真的想通一件事的當下用 wall91_insight 閃一下。"
-        "要永久改忙碌度來源才用 wall91_set_activity。"
-        "改設定都是寫 config.json，wall91 會在 1 秒內自動套用。"
+        "wall42 是桌布層動態粒子，被視窗完全遮擋時會停止繪製。"
+        "跑長任務前用 wall42_think 讓畫面忙起來（到期自動回復，不必記得關）；"
+        "真的想通一件事的當下用 wall42_insight 閃一下。"
+        "要永久改忙碌度來源才用 wall42_set_activity。"
+        "改設定都是寫 config.json，wall42 會在 1 秒內自動套用。"
     ),
 )
 
@@ -47,7 +48,7 @@ def _read_config() -> dict[str, Any]:
         with open(CONFIG) as f:
             return json.load(f)
     except FileNotFoundError:
-        raise ToolError(f"設定檔不存在：{CONFIG}（wall91 可能沒安裝，跑 ./install.sh）")
+        raise ToolError(f"設定檔不存在：{CONFIG}（wall42 可能沒安裝，跑 ./install.sh）")
     except json.JSONDecodeError as e:
         raise ToolError(f"設定檔不是合法 JSON：{e}")
 
@@ -57,12 +58,12 @@ def _write_config(cfg: dict[str, Any]) -> None:
     tmp = CONFIG + ".tmp"
     with open(tmp, "w") as f:
         json.dump(cfg, f, indent=2, sort_keys=True)
-    # 原子替換，避免 wall91 剛好讀到寫到一半的檔案
+    # 原子替換，避免 wall42 剛好讀到寫到一半的檔案
     os.replace(tmp, CONFIG)
 
 
 def _running() -> bool:
-    return subprocess.run(["pgrep", "-x", "wall91"],
+    return subprocess.run(["pgrep", "-x", "wall42"],
                           capture_output=True).returncode == 0
 
 
@@ -90,9 +91,9 @@ def _last_log() -> dict[str, Any]:
 
 
 @mcp.tool(description=(
-    "wall91 目前狀態：是否在執行、被遮擋與否、fps、自身 CPU/記憶體、連線數、"
+    "wall42 目前狀態：是否在執行、被遮擋與否、fps、自身 CPU/記憶體、連線數、"
     "活動度（0=閒置 1=全力運算）、目前的顏色與粒子設定。"))
-def wall91_status() -> dict[str, Any]:
+def wall42_status() -> dict[str, Any]:
     cfg = _read_config()
     m = cfg.get("motion", {})
     act = m.get("activity") or {}
@@ -118,7 +119,7 @@ def wall91_status() -> dict[str, Any]:
 
 
 @mcp.tool(description="列出可切換的預設風格與說明。")
-def wall91_list_presets() -> dict[str, Any]:
+def wall42_list_presets() -> dict[str, Any]:
     desc = {
         "neon": "cyan / hot pink，賽博霓虹",
         "deepsea": "青綠到藍，慢速，結構綿密",
@@ -142,10 +143,10 @@ def wall91_list_presets() -> dict[str, Any]:
 
 @mcp.tool(description=(
     "切換預設風格。會保留目前的 activity 設定（不會把手動拉高的忙碌狀態洗掉）。"))
-def wall91_set_preset(name: str) -> dict[str, Any]:
+def wall42_set_preset(name: str) -> dict[str, Any]:
     src = os.path.join(PRESETS, f"{name}.json")
     if not os.path.exists(src):
-        raise ToolError(f"找不到風格 {name}；用 wall91_list_presets 看有哪些")
+        raise ToolError(f"找不到風格 {name}；用 wall42_list_presets 看有哪些")
     with open(src) as f:
         new = json.load(f)
     try:
@@ -155,7 +156,7 @@ def wall91_set_preset(name: str) -> dict[str, Any]:
     if old_act:
         new.setdefault("motion", {})["activity"] = old_act
     _write_config(new)
-    time.sleep(1.4)   # 等 wall91 的每秒檢查抓到 mtime 變化
+    time.sleep(1.4)   # 等 wall42 的每秒檢查抓到 mtime 變化
     return {"applied": name, "live": _last_log()}
 
 
@@ -164,7 +165,7 @@ def wall91_set_preset(name: str) -> dict[str, Any]:
     "mode=manual 搭配 level（0..1）手動指定：開始跑長時間運算前拉到 0.8~1.0，"
     "畫面的脈衝會沿連線加速流動、線條變亮，看起來像在運算。"
     "mode=system 交還給系統 CPU 負載自動決定（結束後請設回這個）。mode=off 完全關閉。"))
-def wall91_set_activity(
+def wall42_set_activity(
     mode: Literal["system", "manual", "off"],
     level: float | None = None,
     smoothing: float | None = None,
@@ -191,7 +192,7 @@ def wall91_set_activity(
     "改單一設定值。path 用點號指定，例如 motion.particleCount、motion.link.distance、"
     "motion.pulse.speed、background.centerColor。值的型別要與原本相同。"
     "可改的完整清單見 repo 的 README。"))
-def wall91_set(path: str, value: Any) -> dict[str, Any]:
+def wall42_set(path: str, value: Any) -> dict[str, Any]:
     cfg = _read_config()
     parts = path.split(".")
     node = cfg
@@ -215,28 +216,28 @@ def wall91_set(path: str, value: Any) -> dict[str, Any]:
 
 
 def _signal(payload: dict[str, Any]) -> None:
-    """事件走檔案信號，wall91 每秒檢查一次；不需要 socket 或 IPC。"""
+    """事件走檔案信號，wall42 每秒檢查一次；不需要 socket 或 IPC。"""
     if not _running():
-        raise ToolError("wall91 沒有在執行（先用 wall91_control start）")
-    path = os.path.join(HOME, ".config/wall91/.signal")
+        raise ToolError("wall42 沒有在執行（先用 wall42_control start）")
+    path = os.path.join(HOME, ".config/wall42/.signal")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(payload, f)
-    os.replace(tmp, path)     # 原子寫入，免得 wall91 讀到半個檔
+    os.replace(tmp, path)     # 原子寫入，免得 wall42 讀到半個檔
     for _ in range(4):
         time.sleep(0.6)
         if not os.path.exists(path):
             return
-    raise ToolError("信號送出後 wall91 沒有處理，可能卡住了")
+    raise ToolError("信號送出後 wall42 沒有處理，可能卡住了")
 
 
 @mcp.tool(description=(
     "開始一段『AI 正在運算』的畫面：思考密度拉高、脈衝加速、線條變亮。"
     "在你即將跑長時間任務（大量檔案處理、編譯、搜尋、多輪推理）之前呼叫。"
     "**到期會自動回復**成原本的來源，所以不需要記得關掉；"
-    "任務提早結束想立刻收掉的話，用 wall91_set_activity(mode='system')。"))
-def wall91_think(seconds: float = 120, level: float = 0.85) -> dict[str, Any]:
+    "任務提早結束想立刻收掉的話，用 wall42_set_activity(mode='system')。"))
+def wall42_think(seconds: float = 120, level: float = 0.85) -> dict[str, Any]:
     if not (0 <= level <= 1):
         raise ToolError(f"level 必須在 0..1 之間，收到 {level}")
     if not (5 <= seconds <= 3600):
@@ -250,7 +251,7 @@ def wall91_think(seconds: float = 120, level: float = 0.85) -> dict[str, Any]:
     "attention 模式還會爆出一個查詢範圍特別大的焦點。"
     "用在你真的解決一個問題、找到答案、或完成一個階段的當下。"
     "效果約 1.3 秒後自然衰減，不需要復原。"))
-def wall91_insight(strength: float = 1.0) -> dict[str, Any]:
+def wall42_insight(strength: float = 1.0) -> dict[str, Any]:
     if not (0 <= strength <= 1.5):
         raise ToolError(f"strength 必須在 0..1.5 之間，收到 {strength}")
     _signal({"kind": "insight", "strength": float(strength)})
@@ -258,14 +259,14 @@ def wall91_insight(strength: float = 1.0) -> dict[str, Any]:
 
 
 @mcp.tool(description=(
-    "把 wall91 目前的畫面抓一張設成系統桌布。"
-    "wall91 是蓋在桌布上的視窗、沒有改系統設定，所以系統設定的預覽跟實際畫面會不一致，"
-    "而且開機到 wall91 啟動之間會露出舊桌布——這個工具把那兩個落差補起來。"
+    "把 wall42 目前的畫面抓一張設成系統桌布。"
+    "wall42 是蓋在桌布上的視窗、沒有改系統設定，所以系統設定的預覽跟實際畫面會不一致，"
+    "而且開機到 wall42 啟動之間會露出舊桌布——這個工具把那兩個落差補起來。"
     "換過風格或調過顏色之後可以再呼叫一次重拍。"))
-def wall91_sync_wallpaper() -> dict[str, Any]:
+def wall42_sync_wallpaper() -> dict[str, Any]:
     if not _running():
-        raise ToolError("wall91 沒有在執行，無法擷取畫面（先用 wall91_control start）")
-    req = os.path.join(HOME, ".config/wall91/.sync-request")
+        raise ToolError("wall42 沒有在執行，無法擷取畫面（先用 wall42_control start）")
+    req = os.path.join(HOME, ".config/wall42/.sync-request")
     os.makedirs(os.path.dirname(req), exist_ok=True)
     open(req, "w").close()
     # 常駐每秒檢查一次，等它處理完
@@ -274,7 +275,7 @@ def wall91_sync_wallpaper() -> dict[str, Any]:
         if not os.path.exists(req):
             break
     else:
-        raise ToolError("送出要求後逾時，wall91 可能沒在跑或卡住了")
+        raise ToolError("送出要求後逾時，wall42 可能沒在跑或卡住了")
     try:
         with open(LOG) as f:
             tail = [l.strip() for l in f.readlines()[-10:] if "同步桌布" in l]
@@ -284,7 +285,7 @@ def wall91_sync_wallpaper() -> dict[str, Any]:
 
 
 def _scan_claude_sessions() -> list[dict[str, Any]]:
-    """跟 wall91 自己的讀法一致：~/.claude/sessions/<pid>.json，pid 活著才算。"""
+    """跟 wall42 自己的讀法一致：~/.claude/sessions/<pid>.json，pid 活著才算。"""
     d = os.path.join(HOME, ".claude/sessions")
     out = []
     try:
@@ -309,14 +310,14 @@ def _scan_claude_sessions() -> list[dict[str, Any]]:
 @mcp.tool(description=(
     "Claude session 光點：畫面上每個 session 對應一個帶外環的常駐亮點，忙碌的會持續發光、"
     "在 attention 網路裡更頻繁地發起查詢。"
-    "不給 count ＝ 自動模式：wall91 自己讀 ~/.claude/sessions（pid 還活著的、status=busy 算忙碌），"
+    "不給 count ＝ 自動模式：wall42 自己讀 ~/.claude/sessions（pid 還活著的、status=busy 算忙碌），"
     "回傳目前偵測到的清單。給 count（0..64）＝ 由外部餵數字，busy 是其中忙碌的個數，"
-    "寫到 ~/.config/wall91/sessions.json，直到再次呼叫不給 count 才回到自動。"
+    "寫到 ~/.config/wall42/sessions.json，直到再次呼叫不給 count 才回到自動。"
     "enable=True 會在目前設定打開 motion.sessions.enabled（任何風格都能疊加光點）；"
     "也可以直接切 sessions 風格。"))
-def wall91_sessions(count: int | None = None, busy: int = 0,
+def wall42_sessions(count: int | None = None, busy: int = 0,
                     enable: bool = False) -> dict[str, Any]:
-    feed = os.path.join(HOME, ".config/wall91/sessions.json")
+    feed = os.path.join(HOME, ".config/wall42/sessions.json")
     if count is None:
         if os.path.exists(feed):
             os.remove(feed)
@@ -337,7 +338,7 @@ def wall91_sessions(count: int | None = None, busy: int = 0,
         ses["enabled"] = True
         cfg["motion"]["sessions"] = ses
         _write_config(cfg)
-    time.sleep(2.2)     # wall91 每 2 秒更新一次 session 清單
+    time.sleep(2.2)     # wall42 每 2 秒更新一次 session 清單
     out: dict[str, Any] = {"mode": mode, "enabledInConfig": bool(ses.get("enabled"))}
     if mode == "auto":
         found = _scan_claude_sessions()
@@ -350,7 +351,7 @@ def wall91_sessions(count: int | None = None, busy: int = 0,
 
 
 @mcp.tool(description="啟動／停止／重啟常駐。停止後桌面會回到系統原本的桌布。")
-def wall91_control(action: Literal["start", "stop", "restart"]) -> dict[str, Any]:
+def wall42_control(action: Literal["start", "stop", "restart"]) -> dict[str, Any]:
     uid = os.getuid()
     target = f"gui/{uid}/{LABEL}"
     if action in ("stop", "restart"):
@@ -358,7 +359,7 @@ def wall91_control(action: Literal["start", "stop", "restart"]) -> dict[str, Any
     if action in ("start", "restart"):
         plist = os.path.join(HOME, "Library/LaunchAgents", f"{LABEL}.plist")
         if not os.path.exists(plist):
-            raise ToolError(f"找不到 {plist}，wall91 還沒安裝（跑 ./install.sh）")
+            raise ToolError(f"找不到 {plist}，wall42 還沒安裝（跑 ./install.sh）")
         r = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", plist],
                            capture_output=True, text=True)
         if r.returncode != 0 and "already bootstrapped" not in r.stderr:

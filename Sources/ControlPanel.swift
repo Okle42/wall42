@@ -205,7 +205,7 @@ final class ControlPanel: NSObject, NSWindowDelegate {
         let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 620),
                         styleMask: [.titled, .closable, .utilityWindow, .resizable],
                         backing: .buffered, defer: false)
-        p.title = "wall91 參數"
+        p.title = "wall42 參數"
         p.isFloatingPanel = true
         p.hidesOnDeactivate = false
         p.contentView = scroll
@@ -303,7 +303,7 @@ final class ControlPanel: NSObject, NSWindowDelegate {
                 if let idx = values.firstIndex(of: v) {
                     pop?.selectItem(at: idx)
                 }
-                if ProcessInfo.processInfo.environment["WALL91_DEBUG_PANEL"] == "1" {
+                if ProcessInfo.processInfo.environment["WALL42_DEBUG_PANEL"] == "1" {
                     let msg = "refresh choice \(label): value=\(v) "
                         + "idx=\(values.firstIndex(of: v) ?? -1) "
                         + "selected=\(pop?.indexOfSelectedItem ?? -99) isPop=\(pop != nil)\n"
@@ -349,8 +349,8 @@ final class ControlPanel: NSObject, NSWindowDelegate {
         guard let name = app?.currentPresetName else {
             NSSound.beep(); return
         }
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("github-repos/wall91/presets/\(name).json")
+        let url = Config.repoDir
+            .appendingPathComponent("presets/\(name).json")
         guard let d = try? Data(contentsOf: url),
               let cfg = try? JSONDecoder().decode(Config.self, from: d) else { return }
         app?.applyToAll(cfg)

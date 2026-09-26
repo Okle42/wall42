@@ -277,7 +277,7 @@ fragment float4 line_fs(LineOut in [[stage_in]],
 """
 
 // 診斷用：只清畫面、不下任何 draw call，量框架本身的每幀開銷
-let NO_DRAW = (ProcessInfo.processInfo.environment["WALL91_NO_DRAW"] == "1")
+let NO_DRAW = (ProcessInfo.processInfo.environment["WALL42_NO_DRAW"] == "1")
 
 /// 所有螢幕共用的 GPU 資源：shader 只編譯一次，pipeline 只建一次。
 final class GPU {

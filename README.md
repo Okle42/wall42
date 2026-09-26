@@ -1,4 +1,7 @@
-# wall91
+# wall42
+
+> 原名 **wall91**，2026-09-27 改名為 wall42。從舊版升級直接跑 `./install.sh`，
+> 偵測到舊版會自動先跑 `scripts/migrate-from-wall91.sh`（見下方「從 wall91 升級」）。
 
 macOS 桌布層動態粒子。懸浮微光粒子＋靠近連線的神經網路結構，跑在系統桌布之上、桌面圖示之下。
 
@@ -12,12 +15,12 @@ macOS 桌布層動態粒子。懸浮微光粒子＋靠近連線的神經網路�
 ./preset.sh         # 列出預設風格
 ./preset.sh neon    # 套用（存檔即生效，畫面立刻變）
 ./build.sh          # 編譯
-./wall91            # 前景跑，Ctrl-C 結束
+./wall42            # 前景跑，Ctrl-C 結束
 ./install.sh        # 安裝並開機自動啟動
 ./uninstall.sh      # 移除（設定檔保留，系統桌布設定從未被動過）
 ```
 
-設定檔 `~/.config/wall91/config.json`，**存檔即生效，不必重啟**。
+設定檔 `~/.config/wall42/config.json`，**存檔即生效，不必重啟**。
 
 ---
 
@@ -69,10 +72,10 @@ macOS 桌布層動態粒子。懸浮微光粒子＋靠近連線的神經網路�
 | 參數 | 說明 |
 |---|---|
 | `enabled` | 開關 |
-| `source` | `auto`（預設）讀 `~/.claude/sessions/<pid>.json`，pid 活著才算、`status=busy` 算忙碌；`file` 只看 `~/.config/wall91/sessions.json` |
+| `source` | `auto`（預設）讀 `~/.claude/sessions/<pid>.json`，pid 活著才算、`status=busy` 算忙碌；`file` 只看 `~/.config/wall42/sessions.json` |
 | `size` | 光點大小，預設 nodeSizeMax × 1.15 |
 
-`~/.config/wall91/sessions.json` 存在時優先於 auto，格式 `{"count":5,"busy":2}` 或 `{"sessions":[{"id":"a","busy":true}]}`，由 MCP `wall91_sessions(count, busy)` 寫入；`wall91_sessions()` 不給 count 就刪掉它回到自動。
+`~/.config/wall42/sessions.json` 存在時優先於 auto，格式 `{"count":5,"busy":2}` 或 `{"sessions":[{"id":"a","busy":true}]}`，由 MCP `wall42_sessions(count, busy)` 寫入；`wall42_sessions()` 不給 count 就刪掉它回到自動。
 
 ### motion.link — 連線
 
@@ -157,46 +160,46 @@ macOS 桌布層動態粒子。懸浮微光粒子＋靠近連線的神經網路�
 
 ## MCP
 
-`mcp/wall91_mcp.py`　已註冊為使用者層級 MCP server（`claude mcp add --scope user wall91`）。
-控制介面就是設定檔本身——wall91 每秒檢查 mtime，所以 MCP 只要寫檔，不需要任何 IPC。
+`mcp/wall42_mcp.py`　已註冊為使用者層級 MCP server（`claude mcp add --scope user wall42`）。
+控制介面就是設定檔本身——wall42 每秒檢查 mtime，所以 MCP 只要寫檔，不需要任何 IPC。
 
 | tool | 用途 |
 |---|---|
-| `wall91_status` | 執行狀態、是否被遮擋、fps、CPU、記憶體、連線數、活動度 |
-| `wall91_list_presets` | 列出風格 |
-| `wall91_set_preset` | 切換風格（會保留目前的 activity 設定） |
-| `wall91_set_activity` | **忙碌感控制**：`manual`＋level 手動拉高、`system` 交還系統負載、`off` 關閉 |
-| `wall91_set` | 改單一設定，如 `motion.link.distance` |
-| `wall91_think` | **跑長任務前**拉高思考密度，到期自動回復 |
-| `wall91_insight` | **想通一件事的當下**觸發爆亮脈衝，1.3 秒自然衰減 |
-| `wall91_sync_wallpaper` | 把目前畫面同步成系統桌布（換風格後可重拍） |
-| `wall91_sessions` | Claude session 光點：不給 count＝自動讀 ~/.claude/sessions 並回傳偵測到的清單；給 count/busy＝外部餵數字；enable=True 在目前設定打開光點 |
-| `wall91_control` | start / stop / restart |
+| `wall42_status` | 執行狀態、是否被遮擋、fps、CPU、記憶體、連線數、活動度 |
+| `wall42_list_presets` | 列出風格 |
+| `wall42_set_preset` | 切換風格（會保留目前的 activity 設定） |
+| `wall42_set_activity` | **忙碌感控制**：`manual`＋level 手動拉高、`system` 交還系統負載、`off` 關閉 |
+| `wall42_set` | 改單一設定，如 `motion.link.distance` |
+| `wall42_think` | **跑長任務前**拉高思考密度，到期自動回復 |
+| `wall42_insight` | **想通一件事的當下**觸發爆亮脈衝，1.3 秒自然衰減 |
+| `wall42_sync_wallpaper` | 把目前畫面同步成系統桌布（換風格後可重拍） |
+| `wall42_sessions` | Claude session 光點：不給 count＝自動讀 ~/.claude/sessions 並回傳偵測到的清單；給 count/busy＝外部餵數字；enable=True 在目前設定打開光點 |
+| `wall42_control` | start / stop / restart |
 
 ### AI 連動
 
 ```
-跑長任務前   wall91_think(seconds=300, level=0.9)   # 到期自動回復，不必記得關
-想通的當下   wall91_insight()                        # 閃一下，1.3 秒衰減
+跑長任務前   wall42_think(seconds=300, level=0.9)   # 到期自動回復，不必記得關
+想通的當下   wall42_insight()                        # 閃一下，1.3 秒衰減
 ```
 
 `think` **會自動到期**是刻意的：AI 可能忘記關掉，畫面就會一直卡在全速。
-要提早收掉用 `wall91_set_activity(mode="system")`。
+要提早收掉用 `wall42_set_activity(mode="system")`。
 
-事件走**檔案信號**（`~/.config/wall91/.signal`，原子寫入），wall91 每秒檢查一次，
-不需要 socket 或任何 IPC。信號路徑固定在 `~/.config/wall91`，不跟著 `WALL91_CONFIG`
+事件走**檔案信號**（`~/.config/wall42/.signal`，原子寫入），wall42 每秒檢查一次，
+不需要 socket 或任何 IPC。信號路徑固定在 `~/.config/wall42`，不跟著 `WALL42_CONFIG`
 漂移——否則指定別的設定檔測試時就收不到指令了。
 
-### 跟 cool91 的分工
+### 跟 cool42 的分工
 
-兩者都讀系統負載但互不依賴：**cool91 管溫度與風扇**（要不要開工），
-**wall91 管「讓人看得出機器在忙」**。AI 開始長時間運算前呼叫
-`wall91_set_activity(mode="manual", level=1.0)`，脈衝會沿連線加速流動、線條變亮；
+兩者都讀系統負載但互不依賴：**cool42 管溫度與風扇**（要不要開工），
+**wall42 管「讓人看得出機器在忙」**。AI 開始長時間運算前呼叫
+`wall42_set_activity(mode="manual", level=1.0)`，脈衝會沿連線加速流動、線條變亮；
 結束後設回 `mode="system"`。
 
 ## 桌布同步
 
-wall91 **沒有改系統桌布設定**——它是蓋在桌布圖層之上、桌面圖示之下的一個視窗。
+wall42 **沒有改系統桌布設定**——它是蓋在桌布圖層之上、桌面圖示之下的一個視窗。
 好處是 `./uninstall.sh` 執行的瞬間原本的桌布就回來了，不需要還原任何東西。
 代價是兩個落差：
 
@@ -210,13 +213,13 @@ wall91 **沒有改系統桌布設定**——它是蓋在桌布圖層之上、桌
 換過風格或調過顏色之後可以再跑一次重拍。原本的桌布路徑會存到
 `backup/original-wallpaper.txt`，`./uninstall.sh` 會自動還原。
 
-實作上是**檔案信號**：`touch ~/.config/wall91/.sync-request`，常駐實例每秒檢查到就
+實作上是**檔案信號**：`touch ~/.config/wall42/.sync-request`，常駐實例每秒檢查到就
 擷取當前畫面。所以抓的是你此刻看到的那一幀，不是重新渲染的。
 輸出用 `wallpaper_a.png` / `wallpaper_b.png` 交替——macOS 對同一路徑的桌布會吃快取不重繪。
 
 ## 改完程式碼要重新 install
 
-常駐跑的是 `~/.local/bin/wall91`，不是專案目錄裡那份。**只跑 `./build.sh` 不會影響常駐中的實例**——
+常駐跑的是 `~/.local/bin/wall42`，不是專案目錄裡那份。**只跑 `./build.sh` 不會影響常駐中的實例**——
 改完程式碼要 `./install.sh` 才會生效（它會停掉舊的、換掉 binary、重新啟動）。
 
 曾因此看到新設定被舊 binary 忽略：`onlyNodes` 沒生效，460 顆星全部互連、跑出 5000 多條線。
@@ -242,6 +245,29 @@ wall91 **沒有改系統桌布設定**——它是蓋在桌布圖層之上、桌
 | `sand` | 流沙：每台螢幕一道細沙流落成沙丘，像沙漏 |
 | `sessions` | `kang` 風格＋每個 Claude session 一個帶環光點 |
 
+## 從 wall91 升級
+
+`scripts/migrate-from-wall91.sh` 把舊名留下的東西搬到新名，**冪等**（重跑只會跳過已完成的步驟）、
+每一步做完都驗證，刪除一律改成移進備份區 `~/.local/share/wall42-migration/<時間>/`。
+
+```bash
+scripts/migrate-from-wall91.sh --dry-run   # 先看會做什麼，不改任何東西
+scripts/migrate-from-wall91.sh             # 實際搬遷（./install.sh 偵測到舊版時會自動呼叫）
+./install.sh                               # 裝上 wall42 並啟動
+```
+
+| 舊（wall91） | 新（wall42） |
+|---|---|
+| LaunchAgent `com.kang.wall91` | `com.kang.wall42` |
+| `~/.local/bin/wall91` | `~/.local/bin/wall42` |
+| `~/.config/wall91/`（設定、sessions.json、桌布圖） | `~/.config/wall42/` |
+| `~/Library/Logs/wall91.log` | `~/Library/Logs/wall42.log` |
+| MCP server `wall91`、tool `wall91_*` | `wall42`、`wall42_*` |
+| 環境變數 `WALL91_*` | `WALL42_*` |
+
+系統桌布若是之前同步出來、指向 `~/.config/wall91/` 裡的圖，搬遷時會改指新目錄的同名檔（原值先存進備份區）。
+MCP 改名後要重開 Claude Code 才會載入 `wall42`。
+
 ## 已知限制
 
 - 桌布層是非官方做法（Apple 沒有正式 API），未來 macOS 版本可能改變這一層的行為。Plash、Backdrop 等同類 app 都是同樣做法。
@@ -254,14 +280,15 @@ wall91 **沒有改系統桌布設定**——它是蓋在桌布圖層之上、桌
 
 | 變數 | 用途 |
 |---|---|
-| `WALL91_FORCE_DRAW=1` | 忽略遮擋一直畫，量峰值消耗用 |
-| `WALL91_NO_DRAW=1` | 只 clear 不下 draw call，量框架底線 |
-| `WALL91_SNAPSHOT=路徑` | 第 90 幀存一張 PNG |
-| `WALL91_DURATION=秒` | 跑幾秒後自動結束 |
-| `WALL91_PARTICLES` / `WALL91_FPS` | 覆寫設定檔，測試用 |
-| `WALL91_ONLY_MAIN=1` | 只開主螢幕，量單螢幕基準用 |
+| `WALL42_FORCE_DRAW=1` | 忽略遮擋一直畫，量峰值消耗用 |
+| `WALL42_NO_DRAW=1` | 只 clear 不下 draw call，量框架底線 |
+| `WALL42_SNAPSHOT=路徑` | 第 90 幀存一張 PNG |
+| `WALL42_DURATION=秒` | 跑幾秒後自動結束 |
+| `WALL42_PARTICLES` / `WALL42_FPS` | 覆寫設定檔，測試用 |
+| `WALL42_ONLY_MAIN=1` | 只開主螢幕，量單螢幕基準用 |
+| `WALL42_REPO=路徑` | repo 位置（presets／README／backup）。`./install.sh` 會寫進 LaunchAgent；不設就是 `~/github-repos/wall42` |
 
-測試用信號（寫到 `~/.config/wall91/.signal`）：
+測試用信號（寫到 `~/.config/wall42/.signal`）：
 `{"kind":"snapshot","dir":"/路徑","tag":"x"}` 每個螢幕各存一張目前畫面（不改系統桌布）；
 `{"kind":"debug-suspend","reason":"locked","on":true}` 走跟鎖定一樣的停畫路徑。
 

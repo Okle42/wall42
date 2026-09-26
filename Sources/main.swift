@@ -8,13 +8,13 @@ func envBool(_ k: String, _ d: Bool) -> Bool {
     return v == "1" || v.lowercased() == "true"
 }
 
-let DURATION   = envInt("WALL91_DURATION") ?? 0        // 0 = 一直跑
-let ALL_SPACES = envBool("WALL91_ALL_SPACES", true)
+let DURATION   = envInt("WALL42_DURATION") ?? 0        // 0 = 一直跑
+let ALL_SPACES = envBool("WALL42_ALL_SPACES", true)
 // benchmark 專用：忽略遮擋一直畫，用來量「繪製時」的峰值消耗
-let FORCE_DRAW = envBool("WALL91_FORCE_DRAW", false)
-let SNAPSHOT   = ProcessInfo.processInfo.environment["WALL91_SNAPSHOT"]
+let FORCE_DRAW = envBool("WALL42_FORCE_DRAW", false)
+let SNAPSHOT   = ProcessInfo.processInfo.environment["WALL42_SNAPSHOT"]
 // 量測用：只開主螢幕（單螢幕基準），其他螢幕不建視窗
-let ONLY_MAIN  = envBool("WALL91_ONLY_MAIN", false)
+let ONLY_MAIN  = envBool("WALL42_ONLY_MAIN", false)
 
 func stamp() -> String {
     let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
@@ -107,8 +107,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var (cfg, warn) = Config.load()
         if let w = warn { log("⚠ \(w)") }
         // 測試用覆寫
-        if let n = envInt("WALL91_PARTICLES") { cfg.motion.particleCount = n }
-        if let f = envInt("WALL91_FPS")       { cfg.motion.fps = f }
+        if let n = envInt("WALL42_PARTICLES") { cfg.motion.particleCount = n }
+        if let f = envInt("WALL42_FPS")       { cfg.motion.fps = f }
         configMTime = Config.modifiedAt()
 
         guard let device = MTLCreateSystemDefaultDevice() else { log("FATAL 沒有 Metal 裝置"); exit(1) }
@@ -120,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !surfaces.isEmpty else { log("FATAL 沒有可用的螢幕"); exit(1) }
         if let path = SNAPSHOT, let r = surfaces.first?.renderer {
             r.snapshotPath = path
-            r.snapshotAtFrame = envInt("WALL91_SNAPSHOT_FRAME") ?? 90
+            r.snapshotAtFrame = envInt("WALL42_SNAPSHOT_FRAME") ?? 90
         }
 
         // 螢幕插拔、改解析度、排列變更時重建
@@ -271,7 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastSessionSummary = ""
 
     /// 每 2 秒更新一次。設定沒開就什麼都不讀。
-    /// 來源：~/.config/wall91/sessions.json（MCP 餵的）優先；否則讀 ~/.claude/sessions/*.json。
+    /// 來源：~/.config/wall42/sessions.json（MCP 餵的）優先；否則讀 ~/.claude/sessions/*.json。
     private func updateSessions() {
         guard let sc = world.config.motion.sessions, sc.enabled ?? false else {
             if !world.sessions.isEmpty { world.setSessions([]) }
@@ -451,8 +451,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return String(data: out, encoding: .utf8)
         }
         guard let cur = normalized(Config.path) else { return nil }
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("github-repos/wall91/presets")
+        let dir = Config.repoDir
+            .appendingPathComponent("presets")
         let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         for f in files where f.hasSuffix(".json") {
             if normalized(dir.appendingPathComponent(f)) == cur {
@@ -481,26 +481,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // ── 把目前畫面同步成系統桌布 ──────────────────────────────
-    // wall91 是蓋在桌布上的視窗，沒有改系統桌布設定。好處是移除即還原，
+    // wall42 是蓋在桌布上的視窗，沒有改系統桌布設定。好處是移除即還原，
     // 代價是系統設定顯示的跟眼睛看到的不一致、而且啟動前的空窗期會露出舊桌布。
     // 這裡抓一張當前畫面設成系統桌布，把那兩個落差補起來。
 
     /// 產物（桌布圖、slot 記錄）跟著設定檔走，測試指定別的 config 時才不會互相污染
-    private var wall91Dir: URL {
+    private var wall42Dir: URL {
         Config.path.deletingLastPathComponent()
     }
     /// 控制信號固定在這裡。MCP 與 CLI 永遠寫這個路徑，
-    /// 不能跟著 WALL91_CONFIG 漂移，否則指定別的設定檔時就收不到指令了。
+    /// 不能跟著 WALL42_CONFIG 漂移，否則指定別的設定檔時就收不到指令了。
     private var signalDir: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/wall91", isDirectory: true)
+            .appendingPathComponent(".config/wall42", isDirectory: true)
     }
     private var backupDir: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("github-repos/wall91/backup")
+        Config.repoDir
+            .appendingPathComponent("backup")
     }
 
-    /// 由 `touch ~/.config/wall91/.sync-request` 觸發（CLI 與 MCP 都走這個）
+    /// 由 `touch ~/.config/wall42/.sync-request` 觸發（CLI 與 MCP 都走這個）
     private func checkSyncRequest() {
         let dir = signalDir
         let req = dir.appendingPathComponent(".sync-request")
@@ -565,20 +565,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func syncWallpaper() {
         backupOriginalWallpaperIfNeeded()
         // macOS 對「同一路徑」的桌布會吃快取不重繪，A/B 交替避開
-        let slot = (try? String(contentsOf: wall91Dir.appendingPathComponent(".slot"),
+        let slot = (try? String(contentsOf: wall42Dir.appendingPathComponent(".slot"),
                                 encoding: .utf8)) == "a" ? "b" : "a"
-        try? slot.write(to: wall91Dir.appendingPathComponent(".slot"),
+        try? slot.write(to: wall42Dir.appendingPathComponent(".slot"),
                         atomically: true, encoding: .utf8)
         // 清掉另一格的舊圖（含舊版單螢幕檔名）
         let other = slot == "a" ? "b" : "a"
-        if let files = try? FileManager.default.contentsOfDirectory(atPath: wall91Dir.path) {
+        if let files = try? FileManager.default.contentsOfDirectory(atPath: wall42Dir.path) {
             for f in files where f.hasPrefix("wallpaper_\(other)") && f.hasSuffix(".png") {
-                try? FileManager.default.removeItem(at: wall91Dir.appendingPathComponent(f))
+                try? FileManager.default.removeItem(at: wall42Dir.appendingPathComponent(f))
             }
         }
         // 每個螢幕截自己的畫面、設成自己的桌布
         for sf in surfaces {
-            let out = wall91Dir.appendingPathComponent("wallpaper_\(slot)_\(sf.displayID).png")
+            let out = wall42Dir.appendingPathComponent("wallpaper_\(slot)_\(sf.displayID).png")
             let screen = sf.screen
             sf.renderer.snapshotAtFrame = 0
             sf.renderer.onSnapshot = { [weak self] path in
@@ -604,7 +604,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !FileManager.default.fileExists(atPath: f.path) else { return }
         guard let screen = NSScreen.main,
               let cur = NSWorkspace.shared.desktopImageURL(for: screen) else { return }
-        if cur.path.contains("/.config/wall91/") { return }
+        if cur.path.contains("/.config/wall42/") { return }
         try? FileManager.default.createDirectory(at: backupDir, withIntermediateDirectories: true)
         try? cur.path.write(to: f, atomically: true, encoding: .utf8)
         log("已備份原本的系統桌布路徑 -> backup/original-wallpaper.txt")

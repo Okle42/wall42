@@ -13,7 +13,7 @@ def norm(path):
     return o
 
 here = os.path.dirname(os.path.abspath(__file__))
-cur = norm(os.path.expanduser("~/.config/wall91/config.json"))
+cur = norm(os.path.expanduser("~/.config/wall42/config.json"))
 if cur is None:
     sys.exit(0)
 for f in sorted(glob.glob(os.path.join(here, "presets", "*.json"))):

@@ -2,7 +2,7 @@ import Foundation
 import simd
 
 // 設定分成兩組、彼此獨立：換背景不影響動態，換動態不影響背景。
-// 檔案：~/.config/wall91/config.json　存檔後自動熱重載，不需重啟。
+// 檔案：~/.config/wall42/config.json　存檔後自動熱重載，不需重啟。
 
 struct BackgroundConfig: Codable {
     var mode: String            // "solid" | "gradient"（每螢幕徑向）| "vertical"（整片世界上→下，跨螢幕連續）
@@ -143,7 +143,7 @@ struct MotionConfig: Codable {
 struct SessionsConfig: Codable {
     var enabled: Bool?
     /// "auto"：讀 ~/.claude/sessions/*.json（pid 還活著的才算，status=busy 算忙碌）
-    /// "file"：只看 ~/.config/wall91/sessions.json（由 MCP wall91_sessions 餵）
+    /// "file"：只看 ~/.config/wall42/sessions.json（由 MCP wall42_sessions 餵）
     /// 不設＝auto，但 sessions.json 存在時優先用它
     var source: String?
     var size: Float?            // 光點大小，不設＝nodeSizeMax × 1.35
@@ -164,13 +164,24 @@ struct Config: Codable {
     static let `default` = Config(background: .default, motion: .default, ui: .default)
 
     static var path: URL {
-        // WALL91_CONFIG 讓截圖／測試用獨立設定檔，不干擾常駐中的實例
-        if let p = ProcessInfo.processInfo.environment["WALL91_CONFIG"], !p.isEmpty {
+        // WALL42_CONFIG 讓截圖／測試用獨立設定檔，不干擾常駐中的實例
+        if let p = ProcessInfo.processInfo.environment["WALL42_CONFIG"], !p.isEmpty {
             return URL(fileURLWithPath: (p as NSString).expandingTildeInPath)
         }
         let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/wall91", isDirectory: true)
+            .appendingPathComponent(".config/wall42", isDirectory: true)
         return dir.appendingPathComponent("config.json")
+    }
+
+    /// repo 位置（presets／README／backup 都在這裡）。常駐跑的是 ~/.local/bin/wall42，
+    /// 無法從執行檔位置推回 repo，所以 install.sh 會把實際路徑寫進 LaunchAgent 的
+    /// WALL42_REPO；沒設（例如前景直接跑）就用 ~/github-repos/wall42。
+    static var repoDir: URL {
+        if let p = ProcessInfo.processInfo.environment["WALL42_REPO"], !p.isEmpty {
+            return URL(fileURLWithPath: (p as NSString).expandingTildeInPath, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("github-repos/wall42", isDirectory: true)
     }
 
     /// 讀設定；檔案不存在就寫一份預設值出來，讓使用者有東西可改。

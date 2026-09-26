@@ -40,8 +40,8 @@ for F in 24 30 60; do
   say "[$DONE/$TOTAL] particles=$P fps=$F ..."
   LOG="logs/run_${P}_${F}.log"
 
-  WALL91_FORCE_DRAW=1 WALL91_PARTICLES=$P WALL91_FPS=$F WALL91_DURATION=$((SECS + WARMUP + 2)) \
-    ./wall91 > "$LOG" 2>&1 &
+  WALL42_FORCE_DRAW=1 WALL42_PARTICLES=$P WALL42_FPS=$F WALL42_DURATION=$((SECS + WARMUP + 2)) \
+    ./wall42 > "$LOG" 2>&1 &
   PID=$!
 
   sleep $WARMUP   # 跳過啟動期，讓 fps 與 CPU 穩定

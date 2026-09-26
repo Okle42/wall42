@@ -1,4 +1,6 @@
 # 編譯產物
+/wall42
+# 改名前（原名 wall91）留下的舊編譯產物
 /wall91
 /occluder
 /ca_proto

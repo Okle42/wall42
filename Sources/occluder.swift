@@ -1,5 +1,5 @@
 // 測試工具：延遲 N 秒後開一個覆蓋全螢幕的不透明視窗，持續 M 秒後結束。
-// 用來驗證 wall91 的桌布層視窗會不會收到 occluded 通知。
+// 用來驗證 wall42 的桌布層視窗會不會收到 occluded 通知。
 // 視窗 ignoresMouseEvents，所以操作會穿透到下面，不會卡住使用者。
 import Cocoa
 

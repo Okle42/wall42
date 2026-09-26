@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 NAME="${1:-}"
 [ -z "$NAME" ] && { echo "用法: ./save-preset.sh <名稱> [說明]"; exit 1; }
 case "$NAME" in *[!a-zA-Z0-9_-]*) echo "名稱只能用英數、底線、減號"; exit 1;; esac
-CFG="$HOME/.config/wall91/config.json"
+CFG="$HOME/.config/wall42/config.json"
 [ -f "$CFG" ] || { echo "找不到設定檔 $CFG"; exit 1; }
 
 # 同名的先備份，不要默默蓋掉
@@ -18,7 +18,7 @@ mkdir -p backup/styles
 cp "$CFG" "backup/styles/${NAME}_$(date +%Y%m%d_%H%M).json"
 python3 -c "
 import json, sys, pathlib, os
-c = json.load(open(os.path.expanduser('~/.config/wall91/config.json')))
+c = json.load(open(os.path.expanduser('~/.config/wall42/config.json')))
 c.pop('ui', None)
 pathlib.Path('presets/$NAME.json').write_text(json.dumps(c, indent=2, sort_keys=True))
 "
@@ -27,7 +27,7 @@ pathlib.Path('presets/$NAME.json').write_text(json.dumps(c, indent=2, sort_keys=
 python3 - "$NAME" <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
-cfg = json.load(open(os.path.expanduser("~/.config/wall91/config.json")))
+cfg = json.load(open(os.path.expanduser("~/.config/wall42/config.json")))
 pre = json.load(open(f"presets/{name}.json"))
 cfg.pop("ui", None); pre.pop("ui", None)
 if json.dumps(cfg, sort_keys=True) != json.dumps(pre, sort_keys=True):
