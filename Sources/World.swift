@@ -62,6 +62,34 @@ final class World {
     }
     private var focuses: [Focus] = []
 
+    // ── Claude session 光點：接在粒子陣列尾端的常駐節點 ─────────
+    struct SessionInfo: Equatable {
+        var id: String
+        var busy: Bool
+    }
+    private(set) var sessions: [SessionInfo] = []
+    /// 一般粒子數（尾端 sessions.count 顆是 session 光點）
+    private var regularCount: Int { particles.count - sessions.count }
+    private var sessionAnchors: [SIMD2<Float>] = []
+    private var sessionSpawnAcc: [Float] = []
+
+    // ── 效果狀態（snow／sand）────────────────────────────────
+    private var effectName = ""          // 空字串＝下一步要重建效果狀態
+    private var activeEffect = ""        // 上一次實際在跑的效果（重建旗標不會清掉它）
+    /// sand：0 下落中、1 堆積中、2 閒置（在池子裡等著被放出來）
+    private var grainState: [UInt8] = []
+    private var grainAge: [Float] = []
+    private var grainBin: [Int] = []
+    private var grainDh: [Float] = []
+    private var idleGrains: [Int] = []
+    private var heights: [Float] = []        // 每 binW 寬一格的沙堆高度
+    private var groundBins: [Float] = []     // 每格的地面 y（可用區下緣，避開 Dock）
+    private var streamAcc: [Float] = []
+    /// 沙堆整體下沉速度（point/秒）。自動調節：沙粒池快用完就沉快一點，
+    /// 沙堆體積因此穩定在粒子數撐得起的大小，不會越堆越高也不會斷流。
+    private var sinkSpeed: Float = 2.5
+    private let binW: Float = 2
+
     private(set) var particleBuffer: MTLBuffer?
     private(set) var linkBuffer: MTLBuffer?
     private var particleCapacity = 0
@@ -108,7 +136,7 @@ final class World {
 
         if !particles.isEmpty, old.x > 0, old.y > 0 {
             let sx = size.x / old.x, sy = size.y / old.y
-            for i in particles.indices {
+            for i in 0..<regularCount {
                 particles[i].pos.x *= sx
                 particles[i].pos.y *= sy
             }
@@ -116,6 +144,9 @@ final class World {
             focuses.removeAll()
         }
         resizeParticles()
+        // 地面、沙流位置、session 錨點都跟螢幕排列有關，重算
+        effectName = ""
+        placeSessionAnchors()
     }
 
     /// 設定的粒子數換算成整片世界要幾顆
@@ -126,6 +157,14 @@ final class World {
     /// 讓粒子數符合目標：多的從尾端砍掉、少的補新的（新粒子隨機放）。
     private func resizeParticles() {
         let want = targetCount
+        // session 光點在尾端，先拿下來，一般粒子調整完再接回去
+        let tail = Array(particles.suffix(sessions.count))
+        particles.removeLast(sessions.count)
+        defer {
+            particles.append(contentsOf: tail)
+            ensureBuffers()
+            recomputeAttributes()
+        }
         if particles.isEmpty {
             seedParticles(want)
         } else if particles.count > want {
@@ -139,8 +178,7 @@ final class World {
                                                          Float.random(in: 0..<size.y))))
             }
         }
-        ensureBuffers()
-        recomputeAttributes()
+        if particles.count != grainState.count { effectName = "" }   // 效果狀態要重建
     }
 
     private func randomSeed() -> Seed {
@@ -203,7 +241,7 @@ final class World {
         if isNode.count != particles.count {
             isNode = [Bool](repeating: false, count: particles.count)
         }
-        guard seeds.count == particles.count else { return }
+        guard seeds.count == regularCount else { return }
 
         let bias = max(0.1, m.sizeBias ?? 2.2)
         let tv = max(0, m.twinkleVariance ?? 0.6)
@@ -211,7 +249,7 @@ final class World {
         let ndMin = m.nodeSizeMin, ndMax = max(m.nodeSizeMin, m.nodeSizeMax)
         let pMin = m.sizeMin, pMax = max(m.sizeMin, m.sizeMax)
 
-        for i in particles.indices {
+        for i in 0..<regularCount {
             let sd = seeds[i]
             // 用固定種子比大小而不是重骰：調 ratio 時只有邊界附近的粒子換身分
             let isBokeh = sd.bokeh < m.bokeh.ratio
@@ -233,8 +271,9 @@ final class World {
                 : 0.78 + (sd.color - 0.5) * 0.44
             particles[i].depth = isBokeh ? 1.0 : 0.0
             particles[i].twinkle = max(0.15, 1 - tv) + (2 * tv) * sd.twinkle
-            particles[i].fade = 1
+            if effectName != "snow" && effectName != "sand" { particles[i].fade = 1 }
         }
+        styleSessionParticles()
         rebuildLinkIndex()
     }
 
@@ -262,6 +301,14 @@ final class World {
 
         config = new
         linkDistSq = nm.link.distance * nm.link.distance
+        if nm.effect != m.effect { effectName = "" }      // 下一步重建效果狀態
+        if nm.nodeSizeMax != m.nodeSizeMax || nm.sessions?.size != m.sessions?.size {
+            styleSessionParticles()
+        }
+        if (nm.sessions?.enabled ?? false) != (m.sessions?.enabled ?? false),
+           !(nm.sessions?.enabled ?? false) {
+            setSessions([])
+        }
 
         if countChanged {
             transfers.removeAll()
@@ -312,7 +359,10 @@ final class World {
                 ?? ((parseHex(m.colorA) + parseHex(m.colorB)) * 0.5),
             viewOrigin: origin,
             viewSize: vs,
-            pxScale: scale
+            pxScale: scale,
+            worldSize: size,
+            bgMode: b.mode == "vertical" ? 1 : 0,
+            softness: max(0, min(1, m.softness ?? 0))
         )
     }
 
@@ -342,17 +392,18 @@ final class World {
 
     /// 更新位置並重建連線。連線只在遠景粒子之間，前景散景不連線（符合景深邏輯）。
     private func step(_ dt: Float) {
-        let w = size.x, h = size.y
-        for i in particles.indices {
-            particles[i].pos += particles[i].vel * dt
-            if particles[i].pos.x < 0 { particles[i].pos.x += w }
-            if particles[i].pos.x > w { particles[i].pos.x -= w }
-            if particles[i].pos.y < 0 { particles[i].pos.y += h }
-            if particles[i].pos.y > h { particles[i].pos.y -= h }
+        let effect = config.motion.effect
+        if effect != effectName { resetEffect(effect) }
+        switch effect {
+        case "snow": stepSnow(dt)
+        case "sand": stepSand(dt)
+        default:     stepFloating(dt)
         }
+        stepSessionNodes()
 
         guard config.motion.link.enabled else {
             lastLinkCount = 0; transfers.removeAll(); focuses.removeAll()
+            applySessionGlow()
             uploadParticles()
             return
         }
@@ -362,7 +413,19 @@ final class World {
         case "attention": stepAttention(dt)
         default:          stepProximity()
         }
+        applySessionGlow()
         uploadParticles()
+    }
+
+    private func stepFloating(_ dt: Float) {
+        let w = size.x, h = size.y
+        for i in 0..<regularCount {
+            particles[i].pos += particles[i].vel * dt
+            if particles[i].pos.x < 0 { particles[i].pos.x += w }
+            if particles[i].pos.x > w { particles[i].pos.x -= w }
+            if particles[i].pos.y < 0 { particles[i].pos.y += h }
+            if particles[i].pos.y > h { particles[i].pos.y -= h }
+        }
     }
 
     private func stepProximity() {
@@ -455,6 +518,8 @@ final class World {
             focuses.append(Focus(node: n, targets: targets, born: elapsed,
                                  life: Float.random(in: lifeLo...lifeHi)))
         }
+
+        spawnSessionFocuses(dt, maxDist: maxDist, lifeLo: lifeLo, lifeHi: lifeHi)
 
         let op = cfg.opacity
         let lp = lb.contents().bindMemory(to: LinkVertex.self, capacity: maxLinkVerts)
@@ -561,5 +626,365 @@ final class World {
             v += 2
         }
         lastLinkCount = v / 2
+    }
+}
+
+// MARK: - 效果：snow／sand
+
+extension World {
+
+    /// 某個世界 x 位置的「地面」：覆蓋這個 x 的螢幕可用區下緣（避開 Dock）。
+    /// 兩台上下錯位時，取最低的那台；沒有螢幕覆蓋的空隙就用世界底部。
+    fileprivate func groundY(_ x: Float) -> Float {
+        var g: Float = -1
+        for s in slots where x >= s.origin.x && x < s.origin.x + s.size.x {
+            g = max(g, s.visibleBottom)
+        }
+        return g < 0 ? size.y : g
+    }
+
+    /// 某個 x 位置最高那台螢幕的上緣（雪從這裡飄進畫面）
+    fileprivate func topY(_ x: Float) -> Float {
+        var t: Float = .greatestFiniteMagnitude
+        for s in slots where x >= s.origin.x && x < s.origin.x + s.size.x {
+            t = min(t, s.origin.y)
+        }
+        return t == .greatestFiniteMagnitude ? 0 : t
+    }
+
+    /// 切換效果（或粒子數、螢幕排列改變）時重建效果狀態。
+    fileprivate func resetEffect(_ name: String) {
+        let previous = activeEffect
+        effectName = name
+        activeEffect = name
+        // 流沙會把粒子集中成沙流與沙堆，離開時重新均勻撒開
+        if previous == "sand" && name != "sand" {
+            for i in 0..<regularCount {
+                particles[i].pos = SIMD2(Float.random(in: 0..<size.x), Float.random(in: 0..<size.y))
+                particles[i].fade = 1
+            }
+        }
+        transfers.removeAll()
+        focuses.removeAll()
+        let n = regularCount
+        switch name {
+        case "snow":
+            // 從現有位置接續，只是把速度換成落雪；太低的先送回上面
+            for i in 0..<n {
+                particles[i].fade = 1
+                if particles[i].pos.y > groundY(particles[i].pos.x) {
+                    particles[i].pos.y = Float.random(in: 0..<max(1, groundY(particles[i].pos.x)))
+                }
+            }
+        case "sand":
+            grainState = [UInt8](repeating: 2, count: n)
+            grainAge = [Float](repeating: 0, count: n)
+            grainBin = [Int](repeating: 0, count: n)
+            grainDh = [Float](repeating: 0, count: n)
+            idleGrains = Array((0..<n).reversed())
+            for i in 0..<n {
+                particles[i].fade = 0
+                particles[i].pos = SIMD2(-100, -100)
+                particles[i].vel = .zero
+            }
+            let nb = max(1, Int((size.x / binW).rounded(.up)))
+            heights = [Float](repeating: 0, count: nb)
+            groundBins = (0..<nb).map { groundY((Float($0) + 0.5) * binW) }
+            streamAcc = []
+            // 預先跑 25 秒，切過來時沙堆已經在、沙流已經接到底，不是空的
+            for _ in 0..<500 { stepSand(0.05) }
+        default:
+            // 回到漂浮：速度與 fade 由種子重算
+            recomputeAttributes()
+            for i in 0..<n where particles[i].pos.x < 0 || particles[i].pos.y < 0 {
+                particles[i].pos = SIMD2(Float.random(in: 0..<size.x), Float.random(in: 0..<size.y))
+            }
+        }
+        if name != "sand" { grainState = [] }
+    }
+
+    // ── 下雪 ────────────────────────────────────────────────
+    /// 緩降＋左右飄。前景散景雪片落得快、晃得大，做出景深。
+    /// 落到螢幕可用區底部前淡出，從最上面重新飄下；x 是整片世界連續的，會飄過接縫。
+    fileprivate func stepSnow(_ dt: Float) {
+        let m = config.motion
+        let wind = m.wind ?? 8
+        let w = size.x
+        let t = elapsed
+        let fadeZone: Float = 110
+        for i in 0..<regularCount {
+            let sd = seeds[i]
+            let near = particles[i].depth > 0.5
+            let fall = (near ? m.bokeh.speed : m.speed) * (0.55 + 0.9 * sd.velMag)
+            // 晃動：每片自己的頻率與相位；大片晃得慢而大
+            let swayF = (near ? 0.25 : 0.45) + 0.5 * sd.twinkle
+            let swayA: Float = (near ? 26 : 12) + 16 * sd.velMag
+            let vx = wind * (near ? 1.6 : 1) + sin(t * swayF + sd.velAngle) * swayA
+            particles[i].vel = SIMD2(vx, fall)
+            particles[i].pos += particles[i].vel * dt
+            if particles[i].pos.x < 0 { particles[i].pos.x += w }
+            if particles[i].pos.x >= w { particles[i].pos.x -= w }
+
+            let x = particles[i].pos.x
+            let ground = groundY(x)
+            let top = topY(x)
+            if particles[i].pos.y > ground {
+                // 重生在最上面、隨機 x，稍微錯開高度免得一排一起出現
+                let nx = Float.random(in: 0..<w)
+                particles[i].pos = SIMD2(nx, topY(nx) - Float.random(in: 4...60))
+                particles[i].fade = 0
+                continue
+            }
+            let fin = min(1, max(0, (particles[i].pos.y - top + 10) / 70))
+            let fout = min(1, max(0, (ground - particles[i].pos.y) / fadeZone))
+            particles[i].fade = fin * fout * fout * (3 - 2 * fout)      // smoothstep 淡出
+        }
+    }
+
+    // ── 流沙 ────────────────────────────────────────────────
+    /// 沙漏：每台螢幕上方有一道細沙流，沙粒加速落下、在底部堆成錐形（休止角滑落）。
+    /// 整座沙堆像沙漏下半部一樣緩緩往下沉、沉到地面的沙粒淡出消失；越舊的沙粒越暗。
+    /// 用「整體下沉」而不是每顆各自消失：各自消失會在沙堆底部挖出空洞、上面的沙懸空。
+    /// 忙碌時沙流變快。
+    fileprivate func stepSand(_ dt: Float) {
+        let m = config.motion
+        let n = regularCount
+        guard grainState.count == n, !heights.isEmpty else { return }
+        let g: Float = 620
+        let vmax = max(60, m.speed)
+        let perScreen = max(1, min(6, m.streams ?? 1))
+
+        // 沙流位置：每台螢幕均分，緩慢漂移讓沙堆堆成小丘而不是一根針
+        var streams: [SIMD2<Float>] = []
+        for (si, s) in slots.enumerated() {
+            for k in 0..<perScreen {
+                let id = Float(si * perScreen + k)
+                let base = s.origin.x + s.size.x * (Float(k) + 0.5) / Float(perScreen)
+                let wander = sin(elapsed * 0.045 + id * 1.9) * s.size.x * 0.03
+                           + sin(elapsed * 0.17 + id * 0.7) * 5
+                streams.append(SIMD2(base + wander, s.visibleTop - 6))
+            }
+        }
+        if streamAcc.count != streams.count { streamAcc = [Float](repeating: 0, count: streams.count) }
+
+        // 放出新沙粒（活動度越高流得越快）
+        let rate: Float = 130 * (0.75 + activity * 0.9)
+        let bias = max(0.1, m.sizeBias ?? 2.2)
+        for si in streams.indices {
+            streamAcc[si] += rate * dt
+            while streamAcc[si] >= 1 {
+                streamAcc[si] -= 1
+                guard let i = takeGrain() else { break }
+                let sd = seeds[i]
+                // 高斯抖動讓沙流成束而不是一條直線
+                let gx = (Float.random(in: -1...1) + Float.random(in: -1...1) + Float.random(in: -1...1)) * 1.3
+                particles[i].pos = SIMD2(streams[si].x + gx, streams[si].y - Float.random(in: 0...8))
+                particles[i].vel = SIMD2(gx * 1.4, Float.random(in: 10...40))
+                particles[i].size = m.sizeMin + (max(m.sizeMin, m.sizeMax) - m.sizeMin) * pow(sd.size, bias)
+                particles[i].fade = 0
+                particles[i].depth = 0
+                particles[i].boost = 0
+                grainState[i] = 0
+                grainAge[i] = 0
+            }
+        }
+
+        // 下沉速度控制：閒置池低於 6% 就沉快一點，高於 18% 就沉慢一點
+        let idleFrac = Float(idleGrains.count) / Float(max(1, n))
+        if idleFrac < 0.06 { sinkSpeed = min(14, sinkSpeed * (1 + 1.2 * dt)) }
+        else if idleFrac > 0.18 { sinkSpeed = max(0.4, sinkSpeed * (1 - 0.8 * dt)) }
+        let sink = sinkSpeed * dt
+        for b in heights.indices where heights[b] > 0 { heights[b] = max(0, heights[b] - sink) }
+
+        for i in 0..<n {
+            switch grainState[i] {
+            case 0:   // 下落
+                particles[i].vel.y = min(vmax, particles[i].vel.y + g * dt)
+                particles[i].pos += particles[i].vel * dt
+                grainAge[i] += dt
+                particles[i].fade = min(1, grainAge[i] * 5)
+                var b = Int(particles[i].pos.x / binW)
+                if b < 0 || b >= heights.count { releaseGrain(i); continue }
+                let surface = groundBins[b] - heights[b]
+                if particles[i].pos.y >= surface {
+                    // 休止角：比鄰格高太多就往低的那邊滑，最多滑 60 格
+                    let repose: Float = binW * 0.62       // 約 32° 的休止角，沙丘比較緩
+                    for _ in 0..<60 {
+                        let h = groundBins[b] - heights[b]      // 目前表面 y（越小越高）
+                        let lh = b > 0 ? groundBins[b - 1] - heights[b - 1] : -1e9
+                        let rh = b + 1 < heights.count ? groundBins[b + 1] - heights[b + 1] : -1e9
+                        let canL = lh - h > repose, canR = rh - h > repose
+                        if canL && canR { b += Bool.random() ? -1 : 1 }
+                        else if canL { b -= 1 }
+                        else if canR { b += 1 }
+                        else { break }
+                    }
+                    let sz = particles[i].size
+                    let dh = sz * sz * 0.32 / binW        // 比幾何面積小：沙粒彼此交疊，沙堆看起來是實的
+                    heights[b] = min(heights[b] + dh, 260)
+                    grainDh[i] = dh
+                    grainBin[i] = b
+                    grainState[i] = 1
+                    grainAge[i] = 0
+                    particles[i].pos = SIMD2((Float(b) + Float.random(in: 0.1...0.9)) * binW,
+                                             groundBins[b] - heights[b] + dh * 0.5)
+                    particles[i].vel = .zero
+                }
+            case 1:   // 堆積：跟著沙堆一起下沉，越舊越暗，沉到地面淡出
+                grainAge[i] += dt
+                particles[i].pos.y += sink
+                let ground = groundBins[grainBin[i]]
+                let below = particles[i].pos.y - ground
+                if below > 3 { releaseGrain(i); continue }
+                let edge = min(1, max(0, (3 - below) / 9))
+                particles[i].fade = edge * (0.38 + 0.62 * exp(-grainAge[i] / 9))
+            default:
+                break
+            }
+        }
+    }
+
+    private func takeGrain() -> Int? {
+        if let i = idleGrains.popLast() { return i }
+        // 池子空了：回收最老（埋最深）的堆積沙粒。下沉控制正常時很少走到這裡。
+        var best = -1
+        var bestAge: Float = -1
+        for i in 0..<grainState.count where grainState[i] == 1 && grainAge[i] > bestAge {
+            bestAge = grainAge[i]; best = i
+        }
+        return best >= 0 ? best : nil
+    }
+
+    private func releaseGrain(_ i: Int) {
+        grainState[i] = 2
+        particles[i].fade = 0
+        particles[i].pos = SIMD2(-100, -100)
+        particles[i].vel = .zero
+        idleGrains.append(i)
+    }
+}
+
+// MARK: - Claude session 光點
+
+extension World {
+
+    /// 更新 session 清單。沿用既有順序（同一個 session 永遠在同一個位置），新的接在後面。
+    func setSessions(_ list: [SessionInfo]) {
+        let enabled = config.motion.sessions?.enabled ?? false
+        let incoming = enabled ? list : []
+        if incoming == sessions { return }
+        // 依 id 保留原本的順序
+        var next: [SessionInfo] = []
+        for s in sessions { if let n = incoming.first(where: { $0.id == s.id }) { next.append(n) } }
+        for n in incoming where !next.contains(where: { $0.id == n.id }) { next.append(n) }
+        let sameIDs = next.map(\.id) == sessions.map(\.id)
+        if sameIDs {
+            sessions = next             // 只有忙碌狀態變了
+            return
+        }
+        // 成員變了：換掉尾端的光點粒子，清掉牽涉到 session 的思考
+        let reg = regularCount
+        focuses.removeAll { $0.node >= reg || $0.targets.contains { $0 >= reg } }
+        transfers.removeAll { $0.a >= reg || $0.b >= reg }
+        particles.removeLast(sessions.count)
+        sessions = next
+        for _ in sessions { particles.append(blankParticle(at: .zero)) }
+        if isNode.count != particles.count {
+            isNode = Array(isNode.prefix(reg)) + [Bool](repeating: true, count: sessions.count)
+        }
+        ensureBuffers()
+        placeSessionAnchors()
+        styleSessionParticles()
+        rebuildLinkIndex()
+        sessionSpawnAcc = [Float](repeating: 0, count: sessions.count)
+    }
+
+    /// session 位置由 id 雜湊決定：穩定、分散，而且落在某台螢幕的可用區內（避開選單列與 Dock）。
+    fileprivate func placeSessionAnchors() {
+        guard !slots.isEmpty else { sessionAnchors = []; return }
+        sessionAnchors = sessions.map { s in
+            var h: UInt64 = 1469598103934665603          // FNV-1a
+            for b in s.id.utf8 { h = (h ^ UInt64(b)) &* 1099511628211 }
+            let u = Float(h & 0xFFFF) / 65535
+            let v = Float((h >> 16) & 0xFFFF) / 65535
+            let pick = Int((h >> 32) % UInt64(slots.count))
+            let sl = slots[pick]
+            let top = sl.visibleTop + (sl.visibleBottom - sl.visibleTop) * 0.14
+            let bottom = sl.visibleBottom - (sl.visibleBottom - sl.visibleTop) * 0.18
+            return SIMD2(sl.origin.x + sl.size.x * (0.10 + 0.80 * u),
+                         top + (bottom - top) * v)
+        }
+    }
+
+    fileprivate func styleSessionParticles() {
+        let reg = regularCount
+        let m = config.motion
+        let sz = m.sessions?.size ?? max(m.nodeSizeMax, 8) * 1.15
+        for k in 0..<sessions.count {
+            let i = reg + k
+            guard i < particles.count else { break }
+            particles[i].size = sz
+            particles[i].depth = -1          // shader 看到 depth < 0 會多畫一道外環
+            particles[i].colorMix = 0.5
+            particles[i].twinkle = 0.35
+            particles[i].fade = 1
+            particles[i].vel = .zero
+            if i < isNode.count { isNode[i] = true }
+        }
+    }
+
+    /// 光點在錨點附近極慢地繞小圈，看得出是活的但位置穩定
+    fileprivate func stepSessionNodes() {
+        let reg = regularCount
+        if sessionAnchors.count != sessions.count { placeSessionAnchors() }
+        for k in 0..<sessions.count {
+            let i = reg + k
+            let a = sessionAnchors[k]
+            let ph = Float(k) * 2.1
+            particles[i].boost = 0          // 每幀重來，attention 與忙碌光暈再往上疊
+            particles[i].pos = a + SIMD2(cos(elapsed * 0.11 + ph), sin(elapsed * 0.08 + ph)) * 7
+        }
+    }
+
+    /// 忙碌的 session 持續微微發亮（在 attention 爆亮之外的常駐呼吸）
+    fileprivate func applySessionGlow() {
+        let reg = regularCount
+        for k in 0..<sessions.count {
+            let i = reg + k
+            let base: Float = sessions[k].busy
+                ? 0.35 + 0.25 * sin(elapsed * 2.6 + Float(k))
+                : 0.08
+            particles[i].boost = max(particles[i].boost, base)
+        }
+    }
+
+    /// attention 模式：session 光點自己發起思考。忙碌時頻繁、閒置時偶爾。
+    fileprivate func spawnSessionFocuses(_ dt: Float, maxDist: Float, lifeLo: Float, lifeHi: Float) {
+        guard !sessions.isEmpty, linkIdx.count >= 4 else { return }
+        if sessionSpawnAcc.count != sessions.count {
+            sessionSpawnAcc = [Float](repeating: 0, count: sessions.count)
+        }
+        let reg = regularCount
+        let reach = maxDist * 1.4
+        for k in 0..<sessions.count {
+            let rate: Float = sessions[k].busy ? 1.3 : 0.12
+            sessionSpawnAcc[k] += rate * dt
+            guard sessionSpawnAcc[k] >= 1 else { continue }
+            sessionSpawnAcc[k] -= 1
+            let n = reg + k
+            if focuses.contains(where: { $0.node == n && elapsed - $0.born < $0.life * 0.5 }) { continue }
+            let pn = particles[n].pos
+            var targets: [Int] = []
+            let want = sessions[k].busy ? Int.random(in: 5...9) : Int.random(in: 3...5)
+            for _ in 0..<(64 * max(1, Int(areaScale))) where targets.count < want {
+                let c = linkIdx[Int.random(in: 0..<linkIdx.count)]
+                if c == n || targets.contains(c) { continue }
+                let d = pn - particles[c].pos
+                if d.x * d.x + d.y * d.y < reach * reach { targets.append(c) }
+            }
+            guard targets.count >= 2 else { continue }
+            focuses.append(Focus(node: n, targets: targets, born: elapsed,
+                                 life: Float.random(in: lifeLo...lifeHi)))
+        }
     }
 }

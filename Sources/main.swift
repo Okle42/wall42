@@ -266,6 +266,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         world.stepInterval = 1.0 / Double(surfaces.contains { !$0.view.isPaused } ? fastest : full)
     }
 
+    // ── Claude session 光點的資料來源 ─────────────────────────────
+    private var sessionTick = 0
+    private var lastSessionSummary = ""
+
+    /// 每 2 秒更新一次。設定沒開就什麼都不讀。
+    /// 來源：~/.config/wall42/sessions.json（MCP 餵的）優先；否則讀 ~/.claude/sessions/*.json。
+    private func updateSessions() {
+        guard let sc = world.config.motion.sessions, sc.enabled ?? false else {
+            if !world.sessions.isEmpty { world.setSessions([]) }
+            return
+        }
+        sessionTick += 1
+        if sessionTick % 2 == 0 && !world.sessions.isEmpty { return }
+        let feed = signalDir.appendingPathComponent("sessions.json")
+        var list: [World.SessionInfo] = []
+        var from = "auto"
+        if (sc.source ?? "auto") == "file" || FileManager.default.fileExists(atPath: feed.path) {
+            from = "file"
+            if let d = try? Data(contentsOf: feed),
+               let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] {
+                if let arr = o["sessions"] as? [[String: Any]] {
+                    for (k, e) in arr.enumerated() {
+                        list.append(.init(id: (e["id"] as? String) ?? "feed-\(k)",
+                                          busy: (e["busy"] as? Bool) ?? false))
+                    }
+                } else {
+                    let n = max(0, min(64, (o["count"] as? Int) ?? 0))
+                    let b = max(0, (o["busy"] as? Int) ?? 0)
+                    list = (0..<n).map { .init(id: "feed-\($0)", busy: $0 < b) }
+                }
+            }
+        } else {
+            list = scanClaudeSessions()
+        }
+        world.setSessions(list)
+        let summary = "\(from) \(list.count) 個（忙碌 \(list.filter(\.busy).count)）"
+        if summary != lastSessionSummary {
+            lastSessionSummary = summary
+            log(">>> sessions \(summary)")
+        }
+    }
+
+    /// Claude Code 每個 session 會寫 ~/.claude/sessions/<pid>.json，含 sessionId 與 status（busy/idle）。
+    /// pid 還活著的才算；檔案格式不對的直接略過。
+    private func scanClaudeSessions() -> [World.SessionInfo] {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/sessions")
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return [] }
+        var out: [(Double, World.SessionInfo)] = []
+        for f in files where f.hasSuffix(".json") {
+            guard let d = try? Data(contentsOf: dir.appendingPathComponent(f)),
+                  let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any],
+                  let pid = (o["pid"] as? NSNumber)?.int32Value else { continue }
+            if kill(pid, 0) != 0 && errno != EPERM { continue }     // 行程已不在
+            let id = (o["sessionId"] as? String) ?? "pid-\(pid)"
+            let busy = (o["status"] as? String) == "busy"
+            let started = (o["startedAt"] as? NSNumber)?.doubleValue ?? 0
+            out.append((started, .init(id: id, busy: busy)))
+        }
+        return out.sorted { $0.0 < $1.0 }.map(\.1)
+    }
+
     // ── 焦點螢幕：滑鼠所在＋前景 App 視窗所在 ─────────────────────
     /// 每秒檢查一次。只有一台螢幕時直接略過，不做任何查詢。
     private func updateFocus() {
@@ -412,6 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func tick() {
         reloadIfChanged()
         updateFocus()
+        updateSessions()
         updateActivity()
         checkSyncRequest()
         report()

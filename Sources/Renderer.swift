@@ -51,6 +51,9 @@ struct Uniforms {
     var viewOrigin: SIMD2<Float> // 這個螢幕在世界座標中的左上角（point）
     var viewSize: SIMD2<Float>   // 這個螢幕的大小（point）
     var pxScale: Float           // point → pixel（Retina = 2）
+    var worldSize: SIMD2<Float>  // 整片世界大小（point）
+    var bgMode: Float            // 0 = 每螢幕徑向漸層，1 = 整片世界的垂直漸層（上 edge → 下 center）
+    var softness: Float          // 0 = 原本的銳利亮點，1 = 跟散景一樣柔（雪片用）
 }
 
 // Metal Toolchain 未安裝時無法離線編譯 .metal，改在執行期由 source 編譯。
@@ -81,6 +84,9 @@ struct Uniforms {
     float2 viewOrigin;
     float2 viewSize;
     float  pxScale;
+    float2 worldSize;
+    float  bgMode;
+    float  softness;
 };
 
 // 世界座標（point）→ 這個螢幕的 NDC
@@ -101,13 +107,22 @@ vertex float4 bg_vs(uint vid [[vertex_id]])
 fragment float4 bg_fs(float4 pos [[position]],
                       constant Uniforms &u [[buffer(0)]])
 {
-    float2 uv = pos.xy / u.viewport;
-    float2 c  = uv - 0.5;
-    c.x *= u.viewport.x / u.viewport.y;      // 修正長寬比，免得漸層被拉成橢圓
-    float r = length(c);
-    float t = smoothstep(0.0, u.bgRadius, r);
-    t = t * t;                               // 邊緣真的黑，但過渡拉長不結塊
-    float3 col = mix(u.bgCenter.rgb, u.bgEdge.rgb, t);
+    float3 col;
+    if (u.bgMode > 0.5) {
+        // 垂直漸層用世界座標算：兩台螢幕接起來是同一片天空，接縫沒有斷層
+        float wy = u.viewOrigin.y + pos.y / max(u.pxScale, 1.0);
+        float t = clamp(wy / max(u.worldSize.y, 1.0), 0.0, 1.0);
+        t = pow(t, max(0.05, u.bgRadius));   // radius 當曲線：<1 亮部往上推，>1 集中在底部
+        col = mix(u.bgEdge.rgb, u.bgCenter.rgb, t);
+    } else {
+        float2 uv = pos.xy / u.viewport;
+        float2 c  = uv - 0.5;
+        c.x *= u.viewport.x / u.viewport.y;      // 修正長寬比，免得漸層被拉成橢圓
+        float r = length(c);
+        float t = smoothstep(0.0, u.bgRadius, r);
+        t = t * t;                               // 邊緣真的黑，但過渡拉長不結塊
+        col = mix(u.bgCenter.rgb, u.bgEdge.rgb, t);
+    }
     // 8-bit 暗部漸層會出現同心圓色帶，加半個色階的雜訊打散它
     float n = fract(sin(dot(pos.xy, float2(12.9898, 78.233))) * 43758.5453);
     col += (n - 0.5) / 255.0;
@@ -132,6 +147,7 @@ struct PointOut {
     float  alpha;
     float  colorMix;
     float  depth;
+    float  ring;     // > 0：Claude session 光點，外圈多畫一道細環（值＝環的亮度）
 };
 
 // 粒子畫成 instanced quad 而不是 point sprite：
@@ -144,8 +160,12 @@ vertex PointOut particle_vs(uint vid [[vertex_id]],
 {
     Particle p = ps[iid];
     PointOut o;
+    // depth < 0 是 session 光點的記號：quad 放大 2.6 倍留位置給外環，核心大小不變
+    bool session = p.depth < -0.5;
+    o.ring = session ? (0.45 + min(p.boost, 1.5) * 0.5) : 0.0;
+    p.depth = max(p.depth, 0.0);
     float2 corner = float2((vid & 1) ? 1.0 : -1.0, (vid & 2) ? 1.0 : -1.0);
-    float psize = p.size * (1.0 + p.boost * 1.6) * u.pxScale;   // 像素直徑
+    float psize = p.size * (session ? 2.6 : (1.0 + p.boost * 1.6)) * u.pxScale;   // 像素直徑
     float2 ndc = world_to_ndc(p.pos, u) + corner * psize / u.viewport;
     o.position = float4(ndc, 0.0, 1.0);
     o.uv       = corner * 0.5 + 0.5;
@@ -172,20 +192,29 @@ fragment float4 particle_fs(PointOut in [[stage_in]],
 {
     float d = length(in.uv - float2(0.5));
     if (d > 0.5 || in.alpha <= 0.0) discard_fragment();
+    float ringA = 0.0;
+    if (in.ring > 0.0) {
+        // 外環：細細一圈連線色，忙碌時亮；核心照一般節點的算法，只是座標縮回原大小
+        float rd = (d - 0.40) / 0.028;
+        ringA = exp(-rd * rd) * in.ring;
+        d = d * 2.6;
+    }
 
     // 衰減曲線隨景深改變：
     //   遠景 exp 高 -> 收得快 -> 銳利亮點
     //   前景 exp 低 -> 收得慢 -> 柔邊光斑，假造失焦散景，成本與畫小點相同
     // glow=0 時邊緣收得更快，看起來是實心柔邊圓點而不是光暈
-    float sharpness = mix(mix(4.2, 2.4, u.glow), 0.85, in.depth);
+    float sharpness = mix(mix(4.2, 2.4, u.glow), 0.85, max(in.depth, u.softness));
     float halo = pow(smoothstep(0.5, 0.0, d), sharpness);
     // 白色過曝亮核只在 glow 高時出現 —— 這是「霓虹感」的主要來源
     float core = pow(smoothstep(0.30, 0.0, d), 1.4) * (1.0 - in.depth * 0.88) * u.glow;
 
+    if (d > 0.5) { halo = 0.0; core = 0.0; }
     float3 col = mix(u.colorA.rgb, u.colorB.rgb, in.colorMix);
     float3 rgb = col * halo * mix(1.0, 1.7, u.glow) + float3(1.0) * core * 1.15;
     float a = clamp(halo + core, 0.0, 1.0) * in.alpha;
-    return float4(rgb * in.alpha, a);
+    float3 ringRGB = u.linkColor.rgb * 1.6 * ringA * u.brightness;
+    return float4(rgb * in.alpha + ringRGB, max(a, ringA * 0.8));
 }
 
 struct LinkVertex {

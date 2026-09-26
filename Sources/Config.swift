@@ -5,7 +5,7 @@ import simd
 // 檔案：~/.config/wall42/config.json　存檔後自動熱重載，不需重啟。
 
 struct BackgroundConfig: Codable {
-    var mode: String            // "solid" | "gradient"
+    var mode: String            // "solid" | "gradient"（每螢幕徑向）| "vertical"（整片世界上→下，跨螢幕連續）
     var solidColor: String
     var centerColor: String     // gradient 用
     var edgeColor: String
@@ -77,7 +77,7 @@ struct ActivityConfig: Codable {
 }
 
 struct MotionConfig: Codable {
-    var effect: String          // 目前只有 "floating"
+    var effect: String          // "floating" 漂浮｜"snow" 下雪｜"sand" 流沙
     /// 一台「主螢幕大小的面積」裡的粒子數（密度），多螢幕時依世界面積自動放大
     var particleCount: Int
     var fps: Int                // 60Hz 螢幕實際只有 60/30/20/15 可用
@@ -107,6 +107,14 @@ struct MotionConfig: Codable {
     var bokeh: BokehConfig
     var pulse: PulseConfig?         // Optional：舊設定檔沒有這個 key
     var activity: ActivityConfig?
+    /// 粒子邊緣柔和度：0 = 銳利亮點（星空），1 = 跟散景一樣柔（雪片）。不設＝0
+    var softness: Float?
+    /// snow：水平風速（point/秒，正值往右）。不設＝8
+    var wind: Float?
+    /// sand：每台螢幕幾道沙流。不設＝1
+    var streams: Int?
+    /// Claude session 光點（任何 effect 都可疊加）
+    var sessions: SessionsConfig?
 
     static let `default` = MotionConfig(
         effect: "floating",
@@ -129,6 +137,16 @@ struct MotionConfig: Codable {
         pulse: .default,
         activity: .default
     )
+}
+
+/// 每個活躍的 Claude session 對應一個常駐亮點，忙碌時在 attention 網路裡發起更多查詢。
+struct SessionsConfig: Codable {
+    var enabled: Bool?
+    /// "auto"：讀 ~/.claude/sessions/*.json（pid 還活著的才算，status=busy 算忙碌）
+    /// "file"：只看 ~/.config/wall42/sessions.json（由 MCP wall42_sessions 餵）
+    /// 不設＝auto，但 sessions.json 存在時優先用它
+    var source: String?
+    var size: Float?            // 光點大小，不設＝nodeSizeMax × 1.35
 }
 
 /// 圖形入口。原本整個 app 只有終端機一個入口，對桌面視覺工具來說不合理。
