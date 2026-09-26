@@ -1,0 +1,37 @@
+{
+  "background": {
+    "centerColor": "#000610",
+    "edgeColor": "#000000",
+    "mode": "gradient",
+    "radius": 1.35,
+    "solidColor": "#000000"
+  },
+  "motion": {
+    "bokeh": {
+      "dimming": 0.22,
+      "ratio": 0.07,
+      "sizeMax": 54,
+      "sizeMin": 26,
+      "speed": 9
+    },
+    "breathSpeed": 0.35,
+    "brightness": 1,
+    "colorA": "#FFFFFF",
+    "colorB": "#B9D0FF",
+    "effect": "floating",
+    "fps": 30,
+    "link": {
+      "boost": 1.35,
+      "distance": 168,
+      "enabled": false,
+      "opacity": 0.4
+    },
+    "nodeRatio": 0.1,
+    "nodeSizeMax": 16,
+    "nodeSizeMin": 11,
+    "particleCount": 400,
+    "sizeMax": 9,
+    "sizeMin": 4,
+    "speed": 4
+  }
+}
