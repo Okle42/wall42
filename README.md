@@ -204,8 +204,8 @@ wall91 **沒有改系統桌布設定**——它是蓋在桌布圖層之上、桌
 ## 已知限制
 
 - 桌布層是非官方做法（Apple 沒有正式 API），未來 macOS 版本可能改變這一層的行為。Plash、Backdrop 等同類 app 都是同樣做法。
-- 多螢幕未測（只有一台顯示器）；目前只在主螢幕顯示。
-- Spaces 切換與 Stage Manager 下的行為未驗證。
+- 螢幕休眠、系統睡眠、鎖定、螢幕保護程式、切換使用者時一律停畫並釋放 drawable（log 會出現 `SUSPENDED(原因)`），醒來從當下時間接續，粒子不會瞬移。
+- 全螢幕 App 所在的螢幕會自動停畫（遮擋判定），另一台照畫。Spaces／Stage Manager 驗證紀錄見 `docs/bench-20260926.md`。
 - 記憶體 81MB 幾乎全是 AppKit＋Metal 框架的固定開銷，程式自己只用 0.2–0.4MB。
 - 設定檔新增欄位一律要宣告成 Optional，否則舊設定檔缺少該 key 會讓 Codable 整份解碼失敗、使用者的設定被丟回預設值。
 
@@ -218,3 +218,10 @@ wall91 **沒有改系統桌布設定**——它是蓋在桌布圖層之上、桌
 | `WALL91_SNAPSHOT=路徑` | 第 90 幀存一張 PNG |
 | `WALL91_DURATION=秒` | 跑幾秒後自動結束 |
 | `WALL91_PARTICLES` / `WALL91_FPS` | 覆寫設定檔，測試用 |
+| `WALL91_ONLY_MAIN=1` | 只開主螢幕，量單螢幕基準用 |
+
+測試用信號（寫到 `~/.config/wall91/.signal`）：
+`{"kind":"snapshot","dir":"/路徑","tag":"x"}` 每個螢幕各存一張目前畫面（不改系統桌布）；
+`{"kind":"debug-suspend","reason":"locked","on":true}` 走跟鎖定一樣的停畫路徑。
+
+`./bench_cpu.sh [執行檔] [秒數] [標籤]` 暫停常駐、跑指定執行檔量自身 CPU、再把常駐開回來。

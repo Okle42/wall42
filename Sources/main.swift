@@ -13,6 +13,8 @@ let ALL_SPACES = envBool("WALL91_ALL_SPACES", true)
 // benchmark 專用：忽略遮擋一直畫，用來量「繪製時」的峰值消耗
 let FORCE_DRAW = envBool("WALL91_FORCE_DRAW", false)
 let SNAPSHOT   = ProcessInfo.processInfo.environment["WALL91_SNAPSHOT"]
+// 量測用：只開主螢幕（單螢幕基準），其他螢幕不建視窗
+let ONLY_MAIN  = envBool("WALL91_ONLY_MAIN", false)
 
 func stamp() -> String {
     let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
@@ -87,6 +89,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 所有螢幕都被蓋住才算「被遮住」（給選單列顯示）
     var isOccluded: Bool { !surfaces.isEmpty && surfaces.allSatisfy { $0.occluded } }
     private var occlusionEvents = 0
+    /// 螢幕休眠／鎖定／螢幕保護程式／切換使用者時暫停繪製的原因。任何一個成立就全部停畫。
+    /// 遮擋判定在這些情境不一定可靠（休眠時視窗在系統眼中仍「可見」），所以另外明確處理。
+    private(set) var suspendReasons = Set<String>()
+    /// 最近一次停畫／恢復的時間。停畫後第一份統計涵蓋停畫前的幀，不能拿來判定「仍在繪製」。
+    private var lastPauseChange: CFAbsoluteTime = 0
     private var lastCPU: Double = 0
     private var configMTime: Date?
 
@@ -123,6 +130,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: w)
             }
 
+        installPowerObservers()
+
         Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.tick()
         }
@@ -149,7 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var old: [CGDirectDisplayID: Renderer] = [:]
         for sf in surfaces { old[sf.displayID] = sf.renderer; sf.close() }
         surfaces.removeAll()
-        for screen in NSScreen.screens {
+        for screen in (ONLY_MAIN ? Array(NSScreen.screens.prefix(1)) : NSScreen.screens) {
             let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
             guard let r = old[id] ?? Renderer(device: device, config: cfg) else {
                 log("⚠ 螢幕 \(id) 的 Renderer 初始化失敗，略過"); continue
@@ -222,11 +231,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 從選單列手動暫停／繼續。與遮擋暫停獨立，兩者任一成立就不畫。
     func toggleManualPause() {
         manuallyPaused.toggle()
-        for sf in surfaces {
-            sf.view.isPaused = manuallyPaused || sf.occluded
-            if manuallyPaused { sf.view.releaseDrawables() }
-        }
+        for sf in surfaces { updatePaused(sf) }
         log(manuallyPaused ? ">>> 使用者手動暫停" : ">>> 使用者手動繼續")
+    }
+
+    /// 單一出口：手動暫停、遮擋、休眠／鎖定，任一成立就停畫並把 drawable 還回去。
+    /// 從停畫恢復時重設時鐘，免得粒子依「停了多久」一次補算而瞬移。
+    func updatePaused(_ sf: Surface) {
+        let stop = manuallyPaused || sf.occluded || !suspendReasons.isEmpty
+        if stop == sf.view.isPaused { return }
+        lastPauseChange = CFAbsoluteTimeGetCurrent()
+        sf.view.isPaused = stop
+        if stop { sf.view.releaseDrawables() }
+        else { sf.renderer.resetClock() }
+    }
+
+    // ── 螢幕休眠／鎖定／螢幕保護程式 ────────────────────────────
+    private func installPowerObservers() {
+        let ws = NSWorkspace.shared.notificationCenter
+        let pairs: [(Notification.Name, String, Bool)] = [
+            (NSWorkspace.screensDidSleepNotification, "screenSleep", true),
+            (NSWorkspace.screensDidWakeNotification, "screenSleep", false),
+            (NSWorkspace.willSleepNotification, "systemSleep", true),
+            (NSWorkspace.didWakeNotification, "systemSleep", false),
+            (NSWorkspace.sessionDidResignActiveNotification, "sessionInactive", true),
+            (NSWorkspace.sessionDidBecomeActiveNotification, "sessionInactive", false),
+        ]
+        for (name, reason, on) in pairs {
+            ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.setSuspended(reason, on)
+            }
+        }
+        // 鎖定與螢幕保護程式只有分散式通知
+        let dn = DistributedNotificationCenter.default()
+        let dpairs: [(String, String, Bool)] = [
+            ("com.apple.screenIsLocked", "locked", true),
+            ("com.apple.screenIsUnlocked", "locked", false),
+            ("com.apple.screensaver.didstart", "screensaver", true),
+            ("com.apple.screensaver.didstop", "screensaver", false),
+        ]
+        for (name, reason, on) in dpairs {
+            dn.addObserver(forName: Notification.Name(name), object: nil, queue: .main) { [weak self] _ in
+                self?.setSuspended(reason, on)
+            }
+        }
+    }
+
+    func setSuspended(_ reason: String, _ on: Bool) {
+        let before = suspendReasons
+        if on { suspendReasons.insert(reason) } else { suspendReasons.remove(reason) }
+        // 系統醒來時螢幕休眠通知不一定成對，醒來一律清掉休眠類原因
+        if !on && (reason == "systemSleep" || reason == "screenSleep") {
+            suspendReasons.remove("systemSleep"); suspendReasons.remove("screenSleep")
+        }
+        guard before != suspendReasons else { return }
+        for sf in surfaces { updatePaused(sf) }
+        log(">>> \(on ? "SUSPEND" : "RESUME") \(reason)　目前暫停原因=\(suspendReasons.sorted())")
     }
 
     /// 目前設定和哪個 preset 一致（比對時忽略 activity，因為切換風格會保留它）。
@@ -258,8 +318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if FORCE_DRAW { return }
         guard isOccluded != sf.occluded else { return }
         sf.occluded = isOccluded
-        sf.view.isPaused = isOccluded || manuallyPaused
-        if isOccluded { sf.view.releaseDrawables() }   // 順帶把 framebuffer 還回去，記憶體掉 42%
+        updatePaused(sf)          // 停畫時順帶把 framebuffer 還回去，記憶體掉 42%
         log(">>> 螢幕 \(sf.displayID) \(isOccluded ? "OCCLUDED（停止繪製）" : "VISIBLE（恢復繪製）")")
     }
 
@@ -326,6 +385,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             activityOverride = (max(0, min(1, level)),
                                 Date().addingTimeInterval(min(3600, max(5, secs))))
             log(">>> think 啟動 level=\(level) 持續 \(Int(secs))s")
+        case "snapshot":
+            // 測試用：每個螢幕各存一張目前畫面（不改系統桌布）。{"kind":"snapshot","dir":"/path"}
+            let dir = (o["dir"] as? String) ?? NSTemporaryDirectory()
+            let tag = (o["tag"] as? String) ?? "snap"
+            for sf in surfaces {
+                sf.renderer.onSnapshot = nil
+                sf.renderer.snapshotAtFrame = 0
+                sf.renderer.snapshotPath = (dir as NSString).appendingPathComponent("\(tag)_\(sf.displayID).png")
+            }
+            log(">>> snapshot -> \(dir)")
+        case "debug-suspend":
+            // 測試用：直接走休眠／鎖定的同一條路徑。{"kind":"debug-suspend","reason":"locked","on":true}
+            setSuspended((o["reason"] as? String) ?? "debug", (o["on"] as? Bool) ?? true)
         case "insight":
             let st = Float((o["strength"] as? Double) ?? 1.0)
             for sf in surfaces { sf.renderer.triggerInsight(st) }
@@ -492,8 +564,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastFps = fps
         lastCPUPercent = cpuPct
 
-        if isOccluded {
-            let verdict = delta == 0 ? "OK" : "⚠ 仍在繪製"
+        let settling = now - lastPauseChange < 1.1
+        if !suspendReasons.isEmpty {
+            let verdict = delta == 0 ? "OK" : (settling ? "（剛切換）" : "⚠ 仍在繪製")
+            log(String(format: "SUSPENDED(%@)  cpu=%.2f%%  frames=+%d %@  mem=%.1fMB",
+                       suspendReasons.sorted().joined(separator: ","), cpuPct, delta, verdict, mem))
+        } else if isOccluded {
+            let verdict = delta == 0 ? "OK" : (settling ? "（剛切換）" : "⚠ 仍在繪製")
             log(String(format: "OCCLUDED  cpu=%.2f%%  frames=+%d %@  mem=%.1fMB",
                        cpuPct, delta, verdict, mem))
         } else {
