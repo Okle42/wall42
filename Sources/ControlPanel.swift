@@ -326,8 +326,7 @@ final class ControlPanel: NSObject, NSWindowDelegate {
             if idx >= 0 && idx < values.count { set(&cfg, values[idx]) }
         }
 
-        r.apply(cfg)                 // 即時生效
-        app.syncFPSIfNeeded(cfg)
+        app.applyToAll(cfg)          // 即時生效（所有螢幕）
         scheduleSave(cfg)            // 停手後才寫檔，拖動時不狂寫
     }
 
@@ -346,7 +345,7 @@ final class ControlPanel: NSObject, NSWindowDelegate {
             .appendingPathComponent("github-repos/wall42/presets/\(name).json")
         guard let d = try? Data(contentsOf: url),
               let cfg = try? JSONDecoder().decode(Config.self, from: d) else { return }
-        app?.renderer?.apply(cfg)
+        app?.applyToAll(cfg)
         app?.saveConfig(cfg)
         refresh()
     }

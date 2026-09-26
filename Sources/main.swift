@@ -20,24 +20,73 @@ func stamp() -> String {
 }
 func log(_ s: String) { print("[\(stamp())] \(s)"); fflush(stdout) }
 
+/// 一個螢幕一份：視窗＋MTKView＋Renderer。各螢幕獨立判斷遮擋，
+/// 一個被蓋住只停那一個，另一個照畫（遮擋暫停是省資源的命脈）。
+final class Surface {
+    let displayID: CGDirectDisplayID
+    let screen: NSScreen
+    let window: NSWindow
+    let view: MTKView
+    let renderer: Renderer
+    var occluded = false
+    var pending: DispatchWorkItem?
+    var lastFrames = 0
+
+    init(screen: NSScreen, renderer: Renderer, device: MTLDevice, fps: Int) {
+        self.screen = screen
+        self.renderer = renderer
+        displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+        let frame = screen.frame
+        view = MTKView(frame: CGRect(origin: .zero, size: frame.size), device: device)
+        view.delegate = renderer
+        view.colorPixelFormat = .bgra8Unorm
+        view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        view.preferredFramesPerSecond = fps
+        view.enableSetNeedsDisplay = false
+        view.isPaused = false
+
+        window = NSWindow(contentRect: frame, styleMask: [.borderless],
+                          backing: .buffered, defer: false, screen: screen)
+        window.setFrame(frame, display: false)
+        window.contentView = view
+        window.isOpaque = true
+        window.backgroundColor = .black
+        window.ignoresMouseEvents = true          // 不擋點擊桌面圖示
+        window.hasShadow = false
+        window.isReleasedWhenClosed = false
+        // 桌布層：蓋在系統桌布圖之上、桌面圖示之下
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
+        var behavior: NSWindow.CollectionBehavior = [.stationary, .ignoresCycle, .fullScreenNone]
+        if ALL_SPACES { behavior.insert(.canJoinAllSpaces) }
+        window.collectionBehavior = behavior
+    }
+
+    func close() {
+        pending?.cancel()
+        view.isPaused = true
+        view.delegate = nil
+        window.orderOut(nil)
+        window.close()
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
-    var window: NSWindow!
-    var mtkView: MTKView!
-    var renderer: Renderer!
+    private(set) var surfaces: [Surface] = []
+    private var device: MTLDevice!
+    /// 主螢幕那一份。選單列、面板讀設定與統計都看它（所有螢幕共用同一份設定）。
+    var renderer: Renderer! { (surfaces.first { $0.screen == NSScreen.main } ?? surfaces.first)?.renderer }
 
-    private var lastFrames = 0
     private var lastReport = CFAbsoluteTimeGetCurrent()
-    private var occluded = false
     private var menuBar: MenuBarController?
     private var panel: ControlPanel?
     // 給選單列讀的即時狀態
     private(set) var lastFps: Double = 0
     private(set) var lastCPUPercent: Double = 0
     private(set) var manuallyPaused = false
-    var isOccluded: Bool { occluded }
+    /// 所有螢幕都被蓋住才算「被遮住」（給選單列顯示）
+    var isOccluded: Bool { !surfaces.isEmpty && surfaces.allSatisfy { $0.occluded } }
     private var occlusionEvents = 0
-    private var pendingOcclusion: DispatchWorkItem?
     private var lastCPU: Double = 0
     private var configMTime: Date?
 
@@ -50,43 +99,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configMTime = Config.modifiedAt()
 
         guard let device = MTLCreateSystemDefaultDevice() else { log("FATAL 沒有 Metal 裝置"); exit(1) }
-        guard let r = Renderer(device: device, config: cfg) else { log("FATAL Renderer 初始化失敗"); exit(1) }
-        renderer = r
+        self.device = device
+        rebuildSurfaces(cfg)
+        guard !surfaces.isEmpty else { log("FATAL 沒有可用的螢幕或 Renderer 初始化失敗"); exit(1) }
         if let path = SNAPSHOT {
-            r.snapshotPath = path
-            r.snapshotAtFrame = envInt("WALL42_SNAPSHOT_FRAME") ?? 90
+            renderer.snapshotPath = path
+            renderer.snapshotAtFrame = envInt("WALL42_SNAPSHOT_FRAME") ?? 90
         }
 
-        guard let screen = NSScreen.main else { log("FATAL 找不到主螢幕"); exit(1) }
-        let frame = screen.frame
-
-        mtkView = MTKView(frame: CGRect(origin: .zero, size: frame.size), device: device)
-        mtkView.delegate = renderer
-        mtkView.colorPixelFormat = .bgra8Unorm
-        mtkView.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-        mtkView.preferredFramesPerSecond = cfg.motion.fps
-        mtkView.enableSetNeedsDisplay = false
-        mtkView.isPaused = false
-
-        window = NSWindow(contentRect: frame, styleMask: [.borderless],
-                          backing: .buffered, defer: false)
-        window.contentView = mtkView
-        window.isOpaque = true
-        window.backgroundColor = .black
-        window.ignoresMouseEvents = true          // 不擋點擊桌面圖示
-        window.hasShadow = false
-        window.isReleasedWhenClosed = false
-        // 桌布層：蓋在系統桌布圖之上、桌面圖示之下
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
-
-        var behavior: NSWindow.CollectionBehavior = [.stationary, .ignoresCycle, .fullScreenNone]
-        if ALL_SPACES { behavior.insert(.canJoinAllSpaces) }
-        window.collectionBehavior = behavior
-        window.orderFront(nil)
-
+        // 螢幕插拔、改解析度、排列變更時重建
         NotificationCenter.default.addObserver(
-            forName: NSWindow.didChangeOcclusionStateNotification,
-            object: window, queue: .main) { [weak self] _ in self?.occlusionChanged() }
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main) { [weak self] _ in
+                guard let self = self else { return }
+                // 系統會連發好幾次，稍等穩定再重建
+                self.pendingRebuild?.cancel()
+                let w = DispatchWorkItem { [weak self] in
+                    guard let self = self, let cfg = self.renderer?.config else { return }
+                    log(">>> 螢幕配置改變，重建")
+                    self.rebuildSurfaces(cfg)
+                }
+                self.pendingRebuild = w
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: w)
+            }
 
         Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.tick()
@@ -98,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         log("啟動 particles=\(cfg.motion.particleCount) fps=\(cfg.motion.fps) "
-            + "effect=\(cfg.motion.effect) 螢幕=\(Int(frame.width))x\(Int(frame.height))")
+            + "effect=\(cfg.motion.effect) 螢幕=" + surfaces.map { "\(Int($0.screen.frame.width))x\(Int($0.screen.frame.height))" }.joined(separator: ","))
         log("設定檔：\(Config.path.path)　（存檔後自動套用，不必重啟）")
 
         if cfg.ui?.menuBar ?? true {
@@ -106,20 +141,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private var pendingRebuild: DispatchWorkItem?
+
+    /// 依目前的螢幕清單建立每個螢幕的視窗。沿用同一個 displayID 的 renderer，
+    /// 這樣改解析度或插拔另一台時，原本螢幕上的粒子不會重來。
+    func rebuildSurfaces(_ cfg: Config) {
+        var old: [CGDirectDisplayID: Renderer] = [:]
+        for sf in surfaces { old[sf.displayID] = sf.renderer; sf.close() }
+        surfaces.removeAll()
+        for screen in NSScreen.screens {
+            let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+            guard let r = old[id] ?? Renderer(device: device, config: cfg) else {
+                log("⚠ 螢幕 \(id) 的 Renderer 初始化失敗，略過"); continue
+            }
+            let sf = Surface(screen: screen, renderer: r, device: device, fps: cfg.motion.fps)
+            surfaces.append(sf)
+            sf.window.orderFront(nil)
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification,
+                object: sf.window, queue: .main) { [weak self, weak sf] _ in
+                    if let sf = sf { self?.occlusionChanged(sf) }
+                }
+        }
+        log("螢幕數 \(surfaces.count)")
+    }
+
+    /// 設定套到每個螢幕
+    func applyToAll(_ cfg: Config) {
+        for sf in surfaces { sf.renderer.apply(cfg) }
+        syncFPSIfNeeded(cfg)
+    }
+
     // ── 遮擋暫停：整個省資源架構的關鍵 ────────────────────────────
     /// 不對稱去抖：
     ///   恢復顯示 -> 立即生效（使用者體感優先）
     ///   進入遮擋 -> 延遲 300ms（視窗切換瞬間系統的 occlusion 判定會震盪，
     ///              實測一次切換會來回跳 7 次、白畫 16 幀）
-    private func occlusionChanged() {
-        let visible = window.occlusionState.contains(.visible)
+    private func occlusionChanged(_ sf: Surface) {
+        let visible = sf.window.occlusionState.contains(.visible)
         occlusionEvents += 1
-        pendingOcclusion?.cancel()
+        sf.pending?.cancel()
         if visible {
-            applyOcclusion(false)
+            applyOcclusion(sf, false)
         } else {
-            let work = DispatchWorkItem { [weak self] in self?.applyOcclusion(true) }
-            pendingOcclusion = work
+            let work = DispatchWorkItem { [weak self, weak sf] in
+                if let sf = sf { self?.applyOcclusion(sf, true) }
+            }
+            sf.pending = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
         }
     }
@@ -146,16 +214,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// fps 不走 uniform，改了要通知 MTKView
     func syncFPSIfNeeded(_ cfg: Config) {
-        if mtkView.preferredFramesPerSecond != cfg.motion.fps {
-            mtkView.preferredFramesPerSecond = cfg.motion.fps
+        for sf in surfaces where sf.view.preferredFramesPerSecond != cfg.motion.fps {
+            sf.view.preferredFramesPerSecond = cfg.motion.fps
         }
     }
 
     /// 從選單列手動暫停／繼續。與遮擋暫停獨立，兩者任一成立就不畫。
     func toggleManualPause() {
         manuallyPaused.toggle()
-        mtkView.isPaused = manuallyPaused || occluded
-        if manuallyPaused { mtkView.releaseDrawables() }
+        for sf in surfaces {
+            sf.view.isPaused = manuallyPaused || sf.occluded
+            if manuallyPaused { sf.view.releaseDrawables() }
+        }
         log(manuallyPaused ? ">>> 使用者手動暫停" : ">>> 使用者手動繼續")
     }
 
@@ -184,13 +254,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return nil
     }
 
-    private func applyOcclusion(_ isOccluded: Bool) {
+    private func applyOcclusion(_ sf: Surface, _ isOccluded: Bool) {
         if FORCE_DRAW { return }
-        guard isOccluded != occluded else { return }
-        occluded = isOccluded
-        mtkView.isPaused = isOccluded || manuallyPaused
-        if isOccluded { mtkView.releaseDrawables() }   // 順帶把 framebuffer 還回去，記憶體掉 42%
-        log(">>> \(isOccluded ? "OCCLUDED（停止繪製）" : "VISIBLE（恢復繪製）")")
+        guard isOccluded != sf.occluded else { return }
+        sf.occluded = isOccluded
+        sf.view.isPaused = isOccluded || manuallyPaused
+        if isOccluded { sf.view.releaseDrawables() }   // 順帶把 framebuffer 還回去，記憶體掉 42%
+        log(">>> 螢幕 \(sf.displayID) \(isOccluded ? "OCCLUDED（停止繪製）" : "VISIBLE（恢復繪製）")")
     }
 
     // ── 每秒：熱重載檢查 ＋ 統計 ─────────────────────────────────
@@ -258,7 +328,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             log(">>> think 啟動 level=\(level) 持續 \(Int(secs))s")
         case "insight":
             let st = Float((o["strength"] as? Double) ?? 1.0)
-            renderer.triggerInsight(st)
+            for sf in surfaces { sf.renderer.triggerInsight(st) }
             log(">>> insight 觸發 strength=\(st)")
         default:
             log("⚠ 不認得的信號：\(kind)")
@@ -272,30 +342,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 encoding: .utf8)) == "a" ? "b" : "a"
         try? slot.write(to: wall42Dir.appendingPathComponent(".slot"),
                         atomically: true, encoding: .utf8)
-        let out = wall42Dir.appendingPathComponent("wallpaper_\(slot).png")
-
-        renderer.snapshotAtFrame = 0
-        renderer.onSnapshot = { [weak self] path in
-            DispatchQueue.main.async { self?.applyWallpaper(URL(fileURLWithPath: path), slot: slot) }
-        }
-        renderer.snapshotPath = out.path
-        log("同步桌布：擷取目前畫面…")
-    }
-
-    private func applyWallpaper(_ url: URL, slot: String) {
-        var ok = true
-        for screen in NSScreen.screens {
-            do {
-                try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [:])
-            } catch {
-                ok = false
-                log("⚠ 設定系統桌布失敗：\(error.localizedDescription)")
+        // 清掉另一格的舊圖（含舊版單螢幕檔名）
+        let other = slot == "a" ? "b" : "a"
+        if let files = try? FileManager.default.contentsOfDirectory(atPath: wall42Dir.path) {
+            for f in files where f.hasPrefix("wallpaper_\(other)") && f.hasSuffix(".png") {
+                try? FileManager.default.removeItem(at: wall42Dir.appendingPathComponent(f))
             }
         }
-        // 換掉另一格的舊圖，只留當前這張
-        let other = wall42Dir.appendingPathComponent("wallpaper_\(slot == "a" ? "b" : "a").png")
-        try? FileManager.default.removeItem(at: other)
-        if ok { log("同步桌布完成 -> \(url.lastPathComponent)") }
+        // 每個螢幕截自己的畫面、設成自己的桌布
+        for sf in surfaces {
+            let out = wall42Dir.appendingPathComponent("wallpaper_\(slot)_\(sf.displayID).png")
+            let screen = sf.screen
+            sf.renderer.snapshotAtFrame = 0
+            sf.renderer.onSnapshot = { [weak self] path in
+                DispatchQueue.main.async { self?.applyWallpaper(URL(fileURLWithPath: path), screen: screen) }
+            }
+            sf.renderer.snapshotPath = out.path
+        }
+        log("同步桌布：擷取 \(surfaces.count) 個螢幕的畫面…")
+    }
+
+    private func applyWallpaper(_ url: URL, screen: NSScreen) {
+        do {
+            try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [:])
+            log("同步桌布完成 -> \(url.lastPathComponent)")
+        } catch {
+            log("⚠ 設定系統桌布失敗：\(error.localizedDescription)")
+        }
     }
 
     /// 只在第一次同步前記錄，之後不覆寫，免得把我們自己產的圖記成「原本的」。
@@ -316,9 +389,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configMTime = m
         let (cfg, warn) = Config.load()
         if let w = warn { log("⚠ \(w)"); return }
-        let oldFps = renderer.config.motion.fps
-        renderer.apply(cfg)
-        if cfg.motion.fps != oldFps { mtkView.preferredFramesPerSecond = cfg.motion.fps }
+        applyToAll(cfg)
         let wantMenuBar = cfg.ui?.menuBar ?? true
         if wantMenuBar && menuBar == nil { menuBar = MenuBarController(app: self) }
         if !wantMenuBar && menuBar != nil { menuBar = nil }
@@ -363,7 +434,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let o = activityOverride {
             if Date() < o.until {
                 smoothedActivity = smoothedActivity * 0.55 + o.level * 0.45
-                renderer.activity = smoothedActivity
+                for sf in surfaces { sf.renderer.activity = smoothedActivity }
                 return
             }
             activityOverride = nil          // 到期自動回復
@@ -380,7 +451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let k = max(0, min(0.99, a.smoothing ?? 0.85))
         smoothedActivity = smoothedActivity * k + target * (1 - k)
-        renderer.activity = smoothedActivity
+        for sf in surfaces { sf.renderer.activity = smoothedActivity }
     }
 
     private func cpuSeconds() -> Double {
@@ -404,8 +475,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func report() {
         let now = CFAbsoluteTimeGetCurrent()
         let dt = now - lastReport; lastReport = now
-        let total = renderer.frameCount
-        let delta = total - lastFrames; lastFrames = total
+        // fps 以畫最多的那個螢幕為準（各螢幕同一個 fps 設定）
+        var delta = 0, links = 0
+        for sf in surfaces {
+            let d = sf.renderer.frameCount - sf.lastFrames
+            sf.lastFrames = sf.renderer.frameCount
+            delta = max(delta, d)
+            links += sf.occluded ? 0 : sf.renderer.lastLinkCount
+        }
         let fps = dt > 0 ? Double(delta) / dt : 0
 
         let c = cpuSeconds()
@@ -415,18 +492,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastFps = fps
         lastCPUPercent = cpuPct
 
-        if occluded {
+        if isOccluded {
             let verdict = delta == 0 ? "OK" : "⚠ 仍在繪製"
             log(String(format: "OCCLUDED  cpu=%.2f%%  frames=+%d %@  mem=%.1fMB",
                        cpuPct, delta, verdict, mem))
         } else {
-            log(String(format: "visible   fps=%.1f  cpu=%.2f%%  links=%d  act=%.2f  mem=%.1fMB",
-                       fps, cpuPct, renderer.lastLinkCount, renderer.activity, mem))
+            let vis = surfaces.filter { !$0.occluded }.count
+            log(String(format: "visible   screens=%d/%d  fps=%.1f  cpu=%.2f%%  links=%d  act=%.2f  mem=%.1fMB",
+                       vis, surfaces.count, fps, cpuPct, links, renderer.activity, mem))
         }
     }
 
     func applicationWillTerminate(_ note: Notification) {
-        log("結束：總幀數=\(renderer.frameCount) occlusion 事件=\(occlusionEvents)")
+        log("結束：總幀數=\(surfaces.map { $0.renderer.frameCount }) occlusion 事件=\(occlusionEvents)")
     }
 }
 
