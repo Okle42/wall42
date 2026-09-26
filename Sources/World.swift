@@ -554,7 +554,7 @@ final class World {
                 if len > tooFar { continue }
                 let far = min(1, len / maxDist)
                 let alpha = op * fade * (1 - far * 0.5)
-                // seed < 0 代表脈衝位置直接用 age 欄位，這裡塞的是我們算好的 head
+                // seed < 0 代表脈衝位置直接用 age 欄位，這裡塞的是程式算好的 head
                 lp[v]     = LinkVertex(pos: src, alpha: alpha, colorMix: 0,
                                        t: 0, seed: -1, age: head)
                 lp[v + 1] = LinkVertex(pos: dst, alpha: alpha, colorMix: 0,

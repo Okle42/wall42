@@ -16,6 +16,7 @@
 # （install.sh 偵測到舊版時會自己先呼叫這支）。
 #
 # 刪除一律改成「mv 進備份區」，不直接 rm；備份區位置會在最後印出。
+# 還原：bash ~/.local/share/wall42-migration/<時間>/restore.sh（搬回舊檔、桌布改回、重新載入 com.kang.wall91）
 #
 # 用法:
 #   scripts/migrate-from-wall91.sh --dry-run   只列出會做什麼，不改任何東西
@@ -56,7 +57,7 @@ run()  {
   if [ $DRY = 1 ]; then echo "  [dry-run] $*"; return 0; fi
   "$@"
 }
-die()  { echo; echo "✗ 搬遷中止：$*"; [ $DRY = 0 ] && [ -d "$BK" ] && echo "  備份在 $BK"; exit 1; }
+die()  { echo; echo "✗ 搬遷中止：$*"; [ $DRY = 0 ] && [ -d "$BK" ] && { echo "  備份在 $BK"; [ -f "$BK/restore.sh" ] && echo "  還原：bash '$BK/restore.sh'"; }; exit 1; }
 
 # dry-run 完全不碰 launchctl（連唯讀的 print 也不跑），改用「plist 在＋行程在」推斷
 old_loaded() {
@@ -91,6 +92,52 @@ function run(argv) {
 JXA
 }
 
+# 產生 $BK/restore.sh：把這次移進備份區的東西搬回原位、桌布改回原值、重新載入舊常駐
+write_restore_script() {
+  cat > "$BK/restore.sh" <<'SH'
+#!/bin/bash
+# 由 scripts/migrate-from-wall91.sh 產生：把這次搬遷移進備份區的 wall91 檔案搬回原位。用法：bash restore.sh（不用 sudo）
+# 不會刪除 wall42 的任何東西：~/.config/wall42、~/.local/bin/wall42 都留著，只停掉 wall42 常駐。
+set -u
+B="$(cd "$(dirname "$0")" && pwd)"
+U=$(id -u)
+back() {  # back <備份區裡的名稱> <原位置>
+  if [ ! -e "$B/$1" ]; then return 0; fi
+  if [ -e "$2" ]; then echo "  略過（原位置已經有東西）：$2"; return 0; fi
+  mkdir -p "$(dirname "$2")" && mv "$B/$1" "$2" && echo "  已搬回 $2"
+}
+launchctl bootout "gui/$U/com.kang.wall42" 2>/dev/null && echo "  已停 wall42 常駐"
+pkill -x wall42 2>/dev/null
+back config-wall91.moved      "$HOME/.config/wall91"
+back wall91                   "$HOME/.local/bin/wall91"
+back com.kang.wall91.plist    "$HOME/Library/LaunchAgents/com.kang.wall91.plist"
+back wall91.log               "$HOME/Library/Logs/wall91.log"
+# 桌布改回搬遷前的路徑
+if [ -s "$B/wallpapers-before.tsv" ]; then
+  while IFS=$'\t' read -r idx p; do
+    [ -n "$p" ] && [ -f "$p" ] || continue
+    osascript -l JavaScript - "$idx" "$p" >/dev/null 2>&1 <<'JXA'
+ObjC.import("AppKit");
+function run(argv) {
+  var sc = $.NSScreen.screens.objectAtIndex(parseInt(argv[0]));
+  $.NSWorkspace.sharedWorkspace.setDesktopImageURLForScreenOptionsError($.NSURL.fileURLWithPath(argv[1]), sc, $({}), Ref());
+}
+JXA
+    echo "  螢幕 $idx 桌布改回 $p"
+  done < "$B/wallpapers-before.tsv"
+fi
+P="$HOME/Library/LaunchAgents/com.kang.wall91.plist"
+if [ -f "$P" ] && ! launchctl print "gui/$U/com.kang.wall91" >/dev/null 2>&1; then
+  launchctl bootstrap "gui/$U" "$P" && echo "  已重新載入舊常駐 com.kang.wall91"
+fi
+if [ -f "$B/mcp-wall91.txt" ]; then
+  echo
+  echo "MCP 要手動改回：claude mcp remove wall42 -s user；照 $B/mcp-wall91.txt 的 Command/Args 重新 claude mcp add --scope user wall91 -- …"
+fi
+SH
+  chmod 755 "$BK/restore.sh"
+}
+
 say "wall91 → wall42 搬遷$([ $DRY = 1 ] && echo '（dry-run：不會改任何東西）')"
 say "  repo    : $REPO"
 say "  備份區  : $BK"
@@ -121,6 +168,7 @@ if [ $DRY = 1 ]; then
 else
   mkdir -p "$BK" || die "無法建立備份區 $BK"
   printf '%s\n' "$WP" > "$BK/wallpapers-before.tsv"
+  write_restore_script && ok "還原腳本：$BK/restore.sh"
   if [ -d "$OLD_CFG" ]; then
     cp -Rp "$OLD_CFG" "$BK/config-wall91" && diff -r "$OLD_CFG" "$BK/config-wall91" >/dev/null \
       && ok "設定目錄已備份並比對一致" || die "設定目錄備份比對不一致"
@@ -295,9 +343,9 @@ echo
 if [ $DRY = 1 ]; then
   echo "dry-run 結束，沒有改任何東西。實際搬遷：scripts/migrate-from-wall91.sh"
 elif [ $FAIL = 0 ]; then
-  echo "✓ 搬遷完成。備份在 $BK"
+  echo "✓ 搬遷完成。備份在 $BK（還原：bash '$BK/restore.sh'）"
   echo "  下一步：./install.sh 安裝並啟動 wall42；重開 Claude Code 讓 MCP wall42 生效"
 else
-  echo "⚠ 搬遷完成但有步驟失敗（見上方 ✗）。備份在 $BK"
+  echo "⚠ 搬遷完成但有步驟失敗（見上方 ✗）。備份在 $BK（還原：bash '$BK/restore.sh'）"
   exit 1
 fi

@@ -598,7 +598,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 只在第一次同步前記錄，之後不覆寫，免得把我們自己產的圖記成「原本的」。
+    /// 只在第一次同步前記錄，之後不覆寫，免得把 wall42 自己產的圖記成「原本的」。
     private func backupOriginalWallpaperIfNeeded() {
         let f = backupDir.appendingPathComponent("original-wallpaper.txt")
         guard !FileManager.default.fileExists(atPath: f.path) else { return }

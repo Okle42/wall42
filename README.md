@@ -268,6 +268,14 @@ scripts/migrate-from-wall91.sh             # 實際搬遷（./install.sh 偵測�
 系統桌布若是之前同步出來、指向 `~/.config/wall91/` 裡的圖，搬遷時會改指新目錄的同名檔（原值先存進備份區）。
 MCP 改名後要重開 Claude Code 才會載入 `wall42`。
 
+`./install.sh` 會先編譯、編譯成功才搬遷，編譯失敗時舊的 wall91 照常在跑。搬遷後想退回 wall91：
+
+```bash
+bash ~/.local/share/wall42-migration/<時間>/restore.sh   # 搬回舊設定／執行檔／plist／log、桌布改回原值、重新載入 com.kang.wall91
+```
+
+restore.sh 不刪 wall42 的任何東西，只停掉 wall42 常駐；MCP 要照它最後印的提示手動改回。
+
 ## 已知限制
 
 - 桌布層是非官方做法（Apple 沒有正式 API），未來 macOS 版本可能改變這一層的行為。Plash、Backdrop 等同類 app 都是同樣做法。
