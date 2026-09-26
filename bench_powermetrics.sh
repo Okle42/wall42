@@ -76,7 +76,7 @@ def parse(name):
     def avg(pat):
         v = [float(x) for x in re.findall(pat, t)]
         return sum(v) / len(v) if v else float("nan")
-    # tasks 表格：名稱 ... CPU ms/s ... ；只取我們在意的兩個行程
+    # tasks 表格：名稱 ... CPU ms/s ... ；只取在意的兩個行程
     def proc(nm):
         v = []
         for line in t.splitlines():

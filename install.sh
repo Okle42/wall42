@@ -7,6 +7,9 @@ REPO="$(pwd -P)"
 BIN="$HOME/.local/bin/wall42"
 PLIST="$HOME/Library/LaunchAgents/com.kang.wall42.plist"
 
+# 先編譯：編譯失敗就停在這裡，舊版 wall42 還原封不動在跑（搬遷之後才失敗的話，桌布就沒有常駐程式了）
+./build.sh
+
 # 專案原名 wall42：偵測到舊版的常駐／執行檔／設定目錄／MCP 註冊就先搬遷
 if launchctl print "gui/$(id -u)/com.kang.wall42" >/dev/null 2>&1 \
    || [ -e "$HOME/Library/LaunchAgents/com.kang.wall42.plist" ] \
@@ -17,7 +20,6 @@ if launchctl print "gui/$(id -u)/com.kang.wall42" >/dev/null 2>&1 \
   ./scripts/migrate-from-wall42.sh || { echo "搬遷失敗，安裝中止"; exit 1; }
 fi
 
-./build.sh
 mkdir -p "$HOME/.local/bin"
 # 執行中的 binary 不能直接覆寫，先停再換
 launchctl bootout "gui/$(id -u)/com.kang.wall42" 2>/dev/null || true

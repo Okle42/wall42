@@ -9,7 +9,8 @@ MCP server 與 tool、環境變數、腳本、文件）。
 - 設定 `~/.config/wall42/` → `~/.config/wall42/`；log `~/Library/Logs/wall42.log` → `wall42.log`
 - MCP server `wall42` → `wall42`，檔案 `mcp/wall42_mcp.py` → `mcp/wall42_mcp.py`，tool `wall42_*` → `wall42_*`
 - 環境變數 `WALL42_*` → `WALL42_*`
-- 新增 `scripts/migrate-from-wall42.sh`（冪等、先備份、`--dry-run`、每步驗證）；`./install.sh` 偵測到舊版時自動呼叫
+- 新增 `scripts/migrate-from-wall42.sh`（冪等、先備份、`--dry-run`、每步驗證、在備份區產生 `restore.sh`）；
+  `./install.sh` 先編譯，編譯成功且偵測到舊版時才自動呼叫
 - repo 位置不再寫死：Swift 讀 `WALL42_REPO`（install.sh 寫進 LaunchAgent，預設 `~/github-repos/wall42`），
   MCP 以腳本所在位置找 `presets/`
 - 文件中提到的姊妹專案 cool42 同步改稱 cool42
