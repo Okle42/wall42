@@ -81,6 +81,9 @@ struct MotionConfig: Codable {
     /// 一台「主螢幕大小的面積」裡的粒子數（密度），多螢幕時依世界面積自動放大
     var particleCount: Int
     var fps: Int                // 60Hz 螢幕實際只有 60/30/20/15 可用
+    /// 非焦點螢幕（滑鼠與前景視窗都不在上面）的 fps。不設 = fps 的一半。
+    /// 只有一台螢幕時不作用。
+    var secondaryFps: Int?
     var colorA: String          // 兩極色，粒子色相在兩者間分布
     var colorB: String
     var speed: Float
