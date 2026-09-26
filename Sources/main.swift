@@ -31,6 +31,8 @@ final class Surface {
     let view: MTKView
     let renderer: Renderer
     var occluded = false
+    /// 滑鼠或前景 App 的視窗在這台上。非焦點螢幕降 fps 省資源。
+    var focused = true
     var pending: DispatchWorkItem?
     var lastFrames = 0
 
@@ -180,7 +182,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let main = screens[0].frame       // screens[0] 永遠是有選單列的主螢幕
         world.setLayout(screens.map(slot), mainArea: Float(main.width * main.height))
-        world.stepInterval = 1.0 / Double(max(1, cfg.motion.fps))
         log(String(format: "世界 %.0fx%.0f（主螢幕面積的 %.2f 倍）粒子 %d 顆",
                    world.size.x, world.size.y, world.areaScale, world.drawCount))
 
@@ -199,6 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if let sf = sf { self?.occlusionChanged(sf) }
                 }
         }
+        syncFPSIfNeeded(cfg)
         log("螢幕數 \(surfaces.count)")
     }
 
@@ -248,12 +250,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// fps 不走 uniform，改了要通知 MTKView
+    /// fps 不走 uniform，改了要通知 MTKView。焦點螢幕用 fps，其他用 secondaryFps。
     func syncFPSIfNeeded(_ cfg: Config) {
-        for sf in surfaces where sf.view.preferredFramesPerSecond != cfg.motion.fps {
-            sf.view.preferredFramesPerSecond = cfg.motion.fps
+        let full = max(1, cfg.motion.fps)
+        let low = max(1, min(full, cfg.motion.secondaryFps ?? max(1, full / 2)))
+        var fastest = 1
+        for sf in surfaces {
+            let want = (surfaces.count == 1 || sf.focused) ? full : low
+            if sf.view.preferredFramesPerSecond != want {
+                sf.view.preferredFramesPerSecond = want
+            }
+            if !sf.view.isPaused { fastest = max(fastest, want) }
         }
-        world.stepInterval = 1.0 / Double(max(1, cfg.motion.fps))
+        // 模擬跟著畫得最快的那台走；全部停著時沿用 full，恢復的第一幀不會被擋
+        world.stepInterval = 1.0 / Double(surfaces.contains { !$0.view.isPaused } ? fastest : full)
+    }
+
+    // ── 焦點螢幕：滑鼠所在＋前景 App 視窗所在 ─────────────────────
+    /// 每秒檢查一次。只有一台螢幕時直接略過，不做任何查詢。
+    private func updateFocus() {
+        guard surfaces.count > 1 else { return }
+        var ids = Set<CGDirectDisplayID>()
+        let mouse = NSEvent.mouseLocation
+        if let sf = surfaces.first(where: { NSMouseInRect(mouse, $0.screen.frame, false) }) {
+            ids.insert(sf.displayID)
+        }
+        if let key = frontmostWindowCenter() {
+            // CGWindow 座標是 y 向下、原點在主螢幕左上角，換回 Cocoa 座標
+            let mainH = NSScreen.screens.first?.frame.height ?? 0
+            let p = NSPoint(x: key.x, y: mainH - key.y)
+            if let sf = surfaces.first(where: { NSMouseInRect(p, $0.screen.frame, false) }) {
+                ids.insert(sf.displayID)
+            }
+        }
+        if ids.isEmpty { return }        // 判斷不出來就維持原狀
+        var changed = false
+        for sf in surfaces {
+            let f = ids.contains(sf.displayID)
+            if f != sf.focused { sf.focused = f; changed = true }
+        }
+        if changed {
+            syncFPSIfNeeded(world.config)
+            log(">>> 焦點螢幕 " + surfaces.map { "\($0.displayID):\($0.focused ? "焦點" : "降速")\($0.view.preferredFramesPerSecond)" }.joined(separator: " "))
+        }
+    }
+
+    /// 前景 App 最上層一般視窗的中心點（CGWindow 座標）。
+    private func frontmostWindowCenter() -> CGPoint? {
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                    kCGNullWindowID) as? [[String: Any]] else { return nil }
+        for w in list {
+            guard (w[kCGWindowOwnerPID as String] as? Int32) == pid,
+                  (w[kCGWindowLayer as String] as? Int) == 0,
+                  let b = w[kCGWindowBounds as String] as? [String: Any],
+                  let r = CGRect(dictionaryRepresentation: b as CFDictionary),
+                  r.width > 80, r.height > 80 else { continue }
+            return CGPoint(x: r.midX, y: r.midY)
+        }
+        return nil
     }
 
     /// 從選單列手動暫停／繼續。與遮擋暫停獨立，兩者任一成立就不畫。
@@ -270,6 +325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if stop == sf.view.isPaused { return }
         lastPauseChange = CFAbsoluteTimeGetCurrent()
         sf.view.isPaused = stop
+        defer { syncFPSIfNeeded(world.config) }
         if stop { sf.view.releaseDrawables() }
         else if !surfaces.contains(where: { $0 !== sf && !$0.view.isPaused }) {
             world.resetClock()     // 其他螢幕都停著：模擬也停了，從現在接續
@@ -355,6 +411,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // ── 每秒：熱重載檢查 ＋ 統計 ─────────────────────────────────
     private func tick() {
         reloadIfChanged()
+        updateFocus()
         updateActivity()
         checkSyncRequest()
         report()
