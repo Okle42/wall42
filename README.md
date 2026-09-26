@@ -50,6 +50,30 @@ macOS 桌布層動態粒子。懸浮微光粒子＋靠近連線的神經網路�
 | `sizeBias` | 尺寸分布偏斜。1 = 均勻，越大越多小顆 | 2.2。星空類調到 3.0 |
 | `twinkleVariance` | 每顆閃爍快慢的差異。0 = 全部同步呼吸 | 0.6。星空類調到 0.85 |
 
+### motion.effect — 效果（熱重載，存檔即切換）
+
+| 值 | 行為 | 相關參數 |
+|---|---|---|
+| `floating` | 原本的懸浮微光＋連線網路 | 全部 |
+| `snow` | 雪花緩降、左右飄，落到螢幕可用區底部（避開 Dock）前淡出、從最上面重新飄下；x 在整片世界連續，會飄過接縫。散景粒子是近處大雪片，落得快晃得大 | `speed` 落速、`wind` 風速（正值往右，預設 8）、`softness` 邊緣柔和度、`bokeh.*` 近景雪片 |
+| `sand` | 沙漏：每台螢幕上方一道細沙流，沙粒加速落下、依休止角滑落堆成沙丘；整座沙堆緩緩下沉、沉到底淡出，越舊的沙越暗。忙碌度越高沙流越快 | `speed` 終端落速、`streams` 每台幾道沙流（預設 1）、`sizeMin/Max` 沙粒大小、`particleCount` 沙粒池（建議 2000 以上） |
+
+`softness`（0..1）：粒子邊緣柔和度。0 是原本的銳利亮點，雪片建議 0.5。
+`background.mode` 多了 `vertical`：用整片世界算的上→下漸層（上 `edgeColor`、下 `centerColor`，`radius` 當曲線），兩台螢幕接起來沒有斷層，雪與沙的 preset 用這個。
+
+### motion.sessions — Claude session 光點
+
+每個活躍的 Claude session 一個帶細外環的常駐亮點（位置由 session id 雜湊決定，同一個 session 永遠在同一處，落在某台螢幕的可用區內）。
+忙碌的 session 會持續發光，並在 attention 網路裡頻繁發起查詢（閒置時偶爾）。任何 effect 都能疊加。
+
+| 參數 | 說明 |
+|---|---|
+| `enabled` | 開關 |
+| `source` | `auto`（預設）讀 `~/.claude/sessions/<pid>.json`，pid 活著才算、`status=busy` 算忙碌；`file` 只看 `~/.config/wall91/sessions.json` |
+| `size` | 光點大小，預設 nodeSizeMax × 1.15 |
+
+`~/.config/wall91/sessions.json` 存在時優先於 auto，格式 `{"count":5,"busy":2}` 或 `{"sessions":[{"id":"a","busy":true}]}`，由 MCP `wall91_sessions(count, busy)` 寫入；`wall91_sessions()` 不給 count 就刪掉它回到自動。
+
 ### motion.link — 連線
 
 | 參數 | 說明 | 建議 |
@@ -146,6 +170,7 @@ macOS 桌布層動態粒子。懸浮微光粒子＋靠近連線的神經網路�
 | `wall91_think` | **跑長任務前**拉高思考密度，到期自動回復 |
 | `wall91_insight` | **想通一件事的當下**觸發爆亮脈衝，1.3 秒自然衰減 |
 | `wall91_sync_wallpaper` | 把目前畫面同步成系統桌布（換風格後可重拍） |
+| `wall91_sessions` | Claude session 光點：不給 count＝自動讀 ~/.claude/sessions 並回傳偵測到的清單；給 count/busy＝外部餵數字；enable=True 在目前設定打開光點 |
 | `wall91_control` | start / stop / restart |
 
 ### AI 連動
@@ -213,6 +238,9 @@ wall91 **沒有改系統桌布設定**——它是蓋在桌布圖層之上、桌
 | `compute` | 分工運算：無霓虹、單色線、連線不斷生滅 |
 | `thinking` | **AI 思考**：聚焦→放射查詢→回流→想通爆亮 |
 | `minimal` | 純黑底、無連線、少量大光點 |
+| `snow` | 下雪：柔邊雪花＋近景大雪片，夜空垂直漸層，兩螢幕連續 |
+| `sand` | 流沙：每台螢幕一道細沙流落成沙丘，像沙漏 |
+| `sessions` | `kang` 風格＋每個 Claude session 一個帶環光點 |
 
 ## 已知限制
 

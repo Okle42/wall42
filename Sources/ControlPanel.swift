@@ -29,6 +29,14 @@ func panelGroups() -> [Group] {
                 set: { $0.motion.glow = Float($1) }),
         .choice("混合", ["additive", "normal"], ["疊加發光", "一般"],
                 get: { $0.motion.blend ?? "additive" }, set: { $0.motion.blend = $1 }),
+        .choice("效果", ["floating", "snow", "sand"], ["漂浮", "下雪", "流沙"],
+                get: { $0.motion.effect }, set: { $0.motion.effect = $1 }),
+        .toggle("Session 光點", get: { $0.motion.sessions?.enabled ?? false },
+                set: { c, v in
+                    var s = c.motion.sessions ?? SessionsConfig(enabled: nil, source: nil, size: nil)
+                    s.enabled = v
+                    c.motion.sessions = s
+                }),
     ]),
     Group(title: "粒子", rows: [
         .slider("數量", 20...600, 0, get: { Double($0.motion.particleCount) },
@@ -56,7 +64,7 @@ func panelGroups() -> [Group] {
     Group(title: "連線", rows: [
         .toggle("啟用", get: { $0.motion.link.enabled },
                 set: { $0.motion.link.enabled = $1 }),
-        .choice("模式", ["proximity", "traffic"], ["距離（固定網）", "流量（傳輸感）"],
+        .choice("模式", ["proximity", "traffic", "attention"], ["距離（固定網）", "流量（傳輸感）", "注意力（思考）"],
                 get: { $0.motion.link.mode ?? "proximity" },
                 set: { $0.motion.link.mode = $1 }),
         .toggle("只連節點", get: { $0.motion.link.onlyNodes ?? false },

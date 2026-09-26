@@ -129,6 +129,9 @@ def wall91_list_presets() -> dict[str, Any]:
         "starfield-web": "星空＋全連線網格（較密）",
         "neural": "AI 運算：密連線＋流動脈衝，跟著系統負載變化",
         "minimal": "純黑底、無連線、少量大光點",
+        "snow": "下雪：雪花緩降左右飄，落到底部淡出，兩螢幕連續",
+        "sand": "流沙：每台螢幕一道細沙流，底部堆成沙丘緩緩下沉，像沙漏",
+        "sessions": "kang 風格＋每個 Claude session 一個帶外環的常駐光點，忙碌時發起更多查詢",
     }
     try:
         found = sorted(f[:-5] for f in os.listdir(PRESETS) if f.endswith(".json"))
@@ -278,6 +281,72 @@ def wall91_sync_wallpaper() -> dict[str, Any]:
     except FileNotFoundError:
         tail = []
     return {"synced": any("完成" in l for l in tail), "log": tail}
+
+
+def _scan_claude_sessions() -> list[dict[str, Any]]:
+    """跟 wall91 自己的讀法一致：~/.claude/sessions/<pid>.json，pid 活著才算。"""
+    d = os.path.join(HOME, ".claude/sessions")
+    out = []
+    try:
+        names = os.listdir(d)
+    except FileNotFoundError:
+        return out
+    for n in names:
+        if not n.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(d, n)) as f:
+                o = json.load(f)
+            pid = int(o["pid"])
+            os.kill(pid, 0)
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            continue
+        out.append({"id": o.get("sessionId", f"pid-{pid}"), "name": o.get("name", ""),
+                    "busy": o.get("status") == "busy", "startedAt": o.get("startedAt", 0)})
+    return sorted(out, key=lambda x: x["startedAt"])
+
+
+@mcp.tool(description=(
+    "Claude session 光點：畫面上每個 session 對應一個帶外環的常駐亮點，忙碌的會持續發光、"
+    "在 attention 網路裡更頻繁地發起查詢。"
+    "不給 count ＝ 自動模式：wall91 自己讀 ~/.claude/sessions（pid 還活著的、status=busy 算忙碌），"
+    "回傳目前偵測到的清單。給 count（0..64）＝ 由外部餵數字，busy 是其中忙碌的個數，"
+    "寫到 ~/.config/wall91/sessions.json，直到再次呼叫不給 count 才回到自動。"
+    "enable=True 會在目前設定打開 motion.sessions.enabled（任何風格都能疊加光點）；"
+    "也可以直接切 sessions 風格。"))
+def wall91_sessions(count: int | None = None, busy: int = 0,
+                    enable: bool = False) -> dict[str, Any]:
+    feed = os.path.join(HOME, ".config/wall91/sessions.json")
+    if count is None:
+        if os.path.exists(feed):
+            os.remove(feed)
+        mode = "auto"
+    else:
+        if not (0 <= count <= 64):
+            raise ToolError(f"count 必須在 0..64 之間，收到 {count}")
+        if not (0 <= busy <= count):
+            raise ToolError(f"busy 必須在 0..count 之間，收到 {busy}")
+        tmp = feed + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"count": int(count), "busy": int(busy)}, f)
+        os.replace(tmp, feed)
+        mode = "file"
+    cfg = _read_config()
+    ses = cfg.setdefault("motion", {}).get("sessions") or {}
+    if enable and not ses.get("enabled"):
+        ses["enabled"] = True
+        cfg["motion"]["sessions"] = ses
+        _write_config(cfg)
+    time.sleep(2.2)     # wall91 每 2 秒更新一次 session 清單
+    out: dict[str, Any] = {"mode": mode, "enabledInConfig": bool(ses.get("enabled"))}
+    if mode == "auto":
+        found = _scan_claude_sessions()
+        out["detected"] = [{"name": s["name"], "busy": s["busy"]} for s in found]
+    else:
+        out["fed"] = {"count": count, "busy": busy}
+    if not out["enabledInConfig"]:
+        out["note"] = "目前設定沒開 motion.sessions.enabled，畫面上不會出現光點；帶 enable=True 或切 sessions 風格"
+    return out
 
 
 @mcp.tool(description="啟動／停止／重啟常駐。停止後桌面會回到系統原本的桌布。")

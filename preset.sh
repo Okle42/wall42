@@ -23,6 +23,9 @@ if [ -z "$1" ]; then
       kang)       d="★ 你調的最新版（attention 模式）";;
       kang-v1)    d="★ 你調的第一版（traffic、239 傳輸、快速細脈衝）";;
       minimal)   d="純黑底、無連線、少量大光點";;
+      snow)      d="下雪：雪花緩降左右飄，兩螢幕連續";;
+      sand)      d="流沙：細沙流落下堆成沙丘，像沙漏";;
+      sessions)  d="kang＋每個 Claude session 一個帶環光點";;
       *)         d="";;
     esac
     mark=" "; [ "$n" = "$CUR" ] && mark="*"
