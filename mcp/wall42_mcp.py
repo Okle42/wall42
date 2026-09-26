@@ -27,7 +27,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 HOME = os.path.expanduser("~")
 CONFIG = os.path.join(HOME, ".config/wall42/config.json")
 LOG = os.path.join(HOME, "Library/Logs/wall42.log")
-PRESETS = os.path.join(HOME, "github-repos/wall42/presets")
+# presets 跟著這支腳本所在的 repo 走，repo 搬家或改名都不會斷
+PRESETS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "presets")
 LABEL = "com.kang.wall42"
 
 mcp = MCPServer(

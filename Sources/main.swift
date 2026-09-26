@@ -451,8 +451,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return String(data: out, encoding: .utf8)
         }
         guard let cur = normalized(Config.path) else { return nil }
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("github-repos/wall42/presets")
+        let dir = Config.repoDir
+            .appendingPathComponent("presets")
         let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         for f in files where f.hasSuffix(".json") {
             if normalized(dir.appendingPathComponent(f)) == cur {
@@ -496,8 +496,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .appendingPathComponent(".config/wall42", isDirectory: true)
     }
     private var backupDir: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("github-repos/wall42/backup")
+        Config.repoDir
+            .appendingPathComponent("backup")
     }
 
     /// 由 `touch ~/.config/wall42/.sync-request` 觸發（CLI 與 MCP 都走這個）

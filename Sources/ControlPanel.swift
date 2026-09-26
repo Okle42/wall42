@@ -349,8 +349,8 @@ final class ControlPanel: NSObject, NSWindowDelegate {
         guard let name = app?.currentPresetName else {
             NSSound.beep(); return
         }
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("github-repos/wall42/presets/\(name).json")
+        let url = Config.repoDir
+            .appendingPathComponent("presets/\(name).json")
         guard let d = try? Data(contentsOf: url),
               let cfg = try? JSONDecoder().decode(Config.self, from: d) else { return }
         app?.applyToAll(cfg)

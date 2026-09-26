@@ -102,8 +102,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func rebuildPresetMenu() {
         presetMenu.removeAllItems()
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("github-repos/wall42/presets")
+        let dir = Config.repoDir
+            .appendingPathComponent("presets")
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
             .filter { $0.hasSuffix(".json") }
             .map { String($0.dropLast(5)) }
@@ -158,8 +158,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openReadme() {
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("github-repos/wall42/README.md")
+        let url = Config.repoDir
+            .appendingPathComponent("README.md")
         NSWorkspace.shared.open(url)
     }
 

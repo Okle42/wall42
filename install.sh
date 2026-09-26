@@ -3,8 +3,19 @@
 # binary 複製出去而不是直接指向專案目錄，這樣日後搬動專案不會壞掉。
 set -e
 cd "$(dirname "$0")"
+REPO="$(pwd -P)"
 BIN="$HOME/.local/bin/wall42"
 PLIST="$HOME/Library/LaunchAgents/com.kang.wall42.plist"
+
+# 專案原名 wall42：偵測到舊版的常駐／執行檔／設定目錄／MCP 註冊就先搬遷
+if launchctl print "gui/$(id -u)/com.kang.wall42" >/dev/null 2>&1 \
+   || [ -e "$HOME/Library/LaunchAgents/com.kang.wall42.plist" ] \
+   || [ -e "$HOME/.local/bin/wall42" ] \
+   || [ -d "$HOME/.config/wall42" ] \
+   || { command -v claude >/dev/null && claude mcp get wall42 >/dev/null 2>&1; }; then
+  echo "偵測到舊版 wall42，先執行搬遷…"
+  ./scripts/migrate-from-wall42.sh || { echo "搬遷失敗，安裝中止"; exit 1; }
+fi
 
 ./build.sh
 mkdir -p "$HOME/.local/bin"
@@ -20,6 +31,8 @@ cat > "$PLIST" <<PLIST_EOF
 <dict>
     <key>Label</key><string>com.kang.wall42</string>
     <key>ProgramArguments</key><array><string>$BIN</string></array>
+    <!-- presets／README／backup 的位置；常駐的 binary 在 ~/.local/bin，推不回 repo -->
+    <key>EnvironmentVariables</key><dict><key>WALL42_REPO</key><string>$REPO</string></dict>
     <!-- 不指定 ProcessType 時 launchd 會把程序當背景工作，排到 E-core 並限流，
          同樣的繪製工作會多花 5 倍 CPU 時間（實測 3.31% vs 0.61%）。
          這是會持續繪製的前景視覺程式，必須宣告 Interactive。 -->

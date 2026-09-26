@@ -173,6 +173,17 @@ struct Config: Codable {
         return dir.appendingPathComponent("config.json")
     }
 
+    /// repo 位置（presets／README／backup 都在這裡）。常駐跑的是 ~/.local/bin/wall42，
+    /// 無法從執行檔位置推回 repo，所以 install.sh 會把實際路徑寫進 LaunchAgent 的
+    /// WALL42_REPO；沒設（例如前景直接跑）就用 ~/github-repos/wall42。
+    static var repoDir: URL {
+        if let p = ProcessInfo.processInfo.environment["WALL42_REPO"], !p.isEmpty {
+            return URL(fileURLWithPath: (p as NSString).expandingTildeInPath, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("github-repos/wall42", isDirectory: true)
+    }
+
     /// 讀設定；檔案不存在就寫一份預設值出來，讓使用者有東西可改。
     static func load() -> (Config, String?) {
         let url = path
