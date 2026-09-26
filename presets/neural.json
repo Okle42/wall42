@@ -1,0 +1,52 @@
+{
+  "background": {
+    "centerColor": "#080418",
+    "edgeColor": "#000000",
+    "mode": "gradient",
+    "radius": 1.35,
+    "solidColor": "#000000"
+  },
+  "motion": {
+    "activity": {
+      "manualLevel": 0.0,
+      "maxLoad": 0.75,
+      "minLoad": 0.08,
+      "smoothing": 0.85,
+      "source": "system"
+    },
+    "bokeh": {
+      "dimming": 0.16,
+      "ratio": 0.055,
+      "sizeMax": 50,
+      "sizeMin": 24,
+      "speed": 9
+    },
+    "breathSpeed": 0.35,
+    "brightness": 1,
+    "colorA": "#22D9FF",
+    "colorB": "#FF3DA5",
+    "effect": "floating",
+    "fps": 30,
+    "link": {
+      "boost": 1.25,
+      "distance": 210,
+      "enabled": true,
+      "onlyNodes": true,
+      "opacity": 0.3
+    },
+    "nodeRatio": 0.2,
+    "nodeSizeMax": 17,
+    "nodeSizeMin": 10,
+    "particleCount": 460,
+    "pulse": {
+      "speed": 0.35,
+      "strength": 1.2,
+      "width": 0.003
+    },
+    "sizeBias": 3.0,
+    "sizeMax": 11,
+    "sizeMin": 2.5,
+    "speed": 4,
+    "twinkleVariance": 0.85
+  }
+}
