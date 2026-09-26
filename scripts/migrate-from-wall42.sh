@@ -334,7 +334,7 @@ else
     skip "MCP wall42 已註冊且指向 $NEW_MCP_PY"
   else
     if mcp_has wall42; then
-      say "  MCP wall42 指向的不是 $NEW_MCP_PY，重新註冊"
+      say "  MCP wall42 指向的不是 ${NEW_MCP_PY}，重新註冊"
       run "$CLAUDE_BIN" mcp remove wall42 -s user
     fi
     run "$CLAUDE_BIN" mcp add --scope user wall42 -- uv run --script "$NEW_MCP_PY"
@@ -347,9 +347,9 @@ echo
 if [ $DRY = 1 ]; then
   echo "dry-run 結束，沒有改任何東西。實際搬遷：scripts/migrate-from-wall42.sh"
 elif [ $FAIL = 0 ]; then
-  echo "✓ 搬遷完成。備份在 $BK（還原：bash '$BK/restore.sh'）"
+  echo "✓ 搬遷完成。備份在 ${BK}（還原：bash '$BK/restore.sh'）"
   echo "  下一步：./install.sh 安裝並啟動 wall42；重開 Claude Code 讓 MCP wall42 生效"
 else
-  echo "⚠ 搬遷完成但有步驟失敗（見上方 ✗）。備份在 $BK（還原：bash '$BK/restore.sh'）"
+  echo "⚠ 搬遷完成但有步驟失敗（見上方 ✗）。備份在 ${BK}（還原：bash '$BK/restore.sh'）"
   exit 1
 fi
