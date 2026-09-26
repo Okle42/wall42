@@ -525,6 +525,9 @@ final class Renderer: NSObject, MTKViewDelegate {
         )
     }
 
+    /// 從停畫恢復時呼叫：下一幀的 dt 從現在算起，不會一次補上停了多久。
+    func resetClock() { lastTime = CFAbsoluteTimeGetCurrent() }
+
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         let old = viewport
         viewport = SIMD2(Float(size.width), Float(size.height))
