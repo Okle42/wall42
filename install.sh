@@ -11,8 +11,8 @@ PLIST="$HOME/Library/LaunchAgents/com.kang.wall42.plist"
 ./build.sh
 
 # 專案原名 wall42：偵測到舊版的常駐／執行檔／設定目錄／MCP 註冊就先搬遷
-if launchctl print "gui/$(id -u)/com.kang.wall42" >/dev/null 2>&1 \
-   || [ -e "$HOME/Library/LaunchAgents/com.kang.wall42.plist" ] \
+if ls "$HOME"/Library/LaunchAgents/*.wall42.plist >/dev/null 2>&1 \
+   || pgrep -x wall42 >/dev/null 2>&1 \
    || [ -e "$HOME/.local/bin/wall42" ] \
    || [ -d "$HOME/.config/wall42" ] \
    || { command -v claude >/dev/null && claude mcp get wall42 >/dev/null 2>&1; }; then

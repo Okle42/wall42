@@ -5,7 +5,7 @@
 專案原名 **wall42**，全面改名為 **wall42**（程式、執行檔、LaunchAgent label、設定目錄、log、
 MCP server 與 tool、環境變數、腳本、文件）。
 
-- 執行檔 `wall42` → `wall42`；LaunchAgent `com.kang.wall42` → `com.kang.wall42`
+- 執行檔 `wall42` → `wall42`；LaunchAgent `*.wall42` → `com.kang.wall42`
 - 設定 `~/.config/wall42/` → `~/.config/wall42/`；log `~/Library/Logs/wall42.log` → `wall42.log`
 - MCP server `wall42` → `wall42`，檔案 `mcp/wall42_mcp.py` → `mcp/wall42_mcp.py`，tool `wall42_*` → `wall42_*`
 - 環境變數 `WALL42_*` → `WALL42_*`

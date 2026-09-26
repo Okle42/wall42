@@ -3,12 +3,12 @@
 #
 # 做的事（每一步都先看狀態、做完馬上驗證；已經搬過的步驟會自動跳過，重跑安全）：
 #   0. 備份：舊設定目錄、LaunchAgent plist、MCP 註冊內容、目前各螢幕桌布路徑
-#   1. 停舊常駐：launchctl bootout gui/<uid>/com.kang.wall42，確認 wall42 行程不在
+#   1. 停舊常駐：launchctl bootout 舊的 *.wall42 LaunchAgent，確認 wall42 行程不在
 #   2. 搬設定：~/.config/wall42 → ~/.config/wall42（複製→逐檔比對→舊目錄移進備份區）
 #   3. 搬 preset 與 backup/：舊 repo 目錄（~/github-repos/wall42）若不是目前這份，
 #      把新 repo 沒有的 presets/*.json 與 backup/ 內容補過來（不覆蓋）
 #   4. 系統桌布若指向 ~/.config/wall42/ 裡的圖，改指到 ~/.config/wall42/ 的同名檔
-#   5. 移除舊程式與 LaunchAgent：~/.local/bin/wall42、com.kang.wall42.plist 移進備份區
+#   5. 移除舊程式與 LaunchAgent：~/.local/bin/wall42、舊的 *.wall42.plist 移進備份區
 #   6. 舊 log 移進備份區
 #   7. MCP：claude mcp remove wall42 → claude mcp add wall42（指向這份 repo 的 mcp/wall42_mcp.py）
 #
@@ -16,7 +16,7 @@
 # （install.sh 偵測到舊版時會自己先呼叫這支）。
 #
 # 刪除一律改成「mv 進備份區」，不直接 rm；備份區位置會在最後印出。
-# 還原：bash ~/.local/share/wall42-migration/<時間>/restore.sh（搬回舊檔、桌布改回、重新載入 com.kang.wall42）
+# 還原：bash ~/.local/share/wall42-migration/<時間>/restore.sh（搬回舊檔、桌布改回、重新載入舊常駐）
 #
 # 用法:
 #   scripts/migrate-from-wall42.sh --dry-run   只列出會做什麼，不改任何東西
@@ -34,8 +34,10 @@ done
 
 REPO="$(cd "$(dirname "$0")/.." && pwd -P)"
 UID_=$(id -u)
-OLD_LABEL="com.kang.wall42"
-OLD_PLIST="$HOME/Library/LaunchAgents/$OLD_LABEL.plist"
+# 舊 LaunchAgent 的 label 前綴因人而異（*.wall42），照實際存在的 plist 找，不寫死
+OLD_PLIST=$(ls "$HOME"/Library/LaunchAgents/*.wall42.plist 2>/dev/null | head -1)
+[ -n "$OLD_PLIST" ] || OLD_PLIST="$HOME/Library/LaunchAgents/local.wall42.plist"   # 沒有舊 plist：給一個不存在的路徑，後面的判斷自然都是「沒有」
+OLD_LABEL=$(basename "$OLD_PLIST" .plist)
 OLD_BIN="$HOME/.local/bin/wall42"
 OLD_CFG="$HOME/.config/wall42"
 OLD_LOG="$HOME/Library/Logs/wall42.log"
@@ -107,10 +109,12 @@ back() {  # back <備份區裡的名稱> <原位置>
   mkdir -p "$(dirname "$2")" && mv "$B/$1" "$2" && echo "  已搬回 $2"
 }
 launchctl bootout "gui/$U/com.kang.wall42" 2>/dev/null && echo "  已停 wall42 常駐"
+OLD_PLIST_NAME=$(cd "$B" && ls *.wall42.plist 2>/dev/null | head -1)
+OLD_LABEL=${OLD_PLIST_NAME%.plist}
 pkill -x wall42 2>/dev/null
 back config-wall42.moved      "$HOME/.config/wall42"
 back wall42                   "$HOME/.local/bin/wall42"
-back com.kang.wall42.plist    "$HOME/Library/LaunchAgents/com.kang.wall42.plist"
+[ -n "$OLD_PLIST_NAME" ] && back "$OLD_PLIST_NAME" "$HOME/Library/LaunchAgents/$OLD_PLIST_NAME"
 back wall42.log               "$HOME/Library/Logs/wall42.log"
 # 桌布改回搬遷前的路徑
 if [ -s "$B/wallpapers-before.tsv" ]; then
@@ -126,9 +130,9 @@ JXA
     echo "  螢幕 $idx 桌布改回 $p"
   done < "$B/wallpapers-before.tsv"
 fi
-P="$HOME/Library/LaunchAgents/com.kang.wall42.plist"
-if [ -f "$P" ] && ! launchctl print "gui/$U/com.kang.wall42" >/dev/null 2>&1; then
-  launchctl bootstrap "gui/$U" "$P" && echo "  已重新載入舊常駐 com.kang.wall42"
+P="$HOME/Library/LaunchAgents/$OLD_PLIST_NAME"
+if [ -n "$OLD_PLIST_NAME" ] && [ -f "$P" ] && ! launchctl print "gui/$U/$OLD_LABEL" >/dev/null 2>&1; then
+  launchctl bootstrap "gui/$U" "$P" && echo "  已重新載入舊常駐 $OLD_LABEL"
 fi
 if [ -f "$B/mcp-wall42.txt" ]; then
   echo

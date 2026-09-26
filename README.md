@@ -258,7 +258,7 @@ scripts/migrate-from-wall42.sh             # 實際搬遷（./install.sh 偵測�
 
 | 舊（wall42） | 新（wall42） |
 |---|---|
-| LaunchAgent `com.kang.wall42` | `com.kang.wall42` |
+| LaunchAgent `*.wall42` | `com.kang.wall42` |
 | `~/.local/bin/wall42` | `~/.local/bin/wall42` |
 | `~/.config/wall42/`（設定、sessions.json、桌布圖） | `~/.config/wall42/` |
 | `~/Library/Logs/wall42.log` | `~/Library/Logs/wall42.log` |
@@ -271,7 +271,7 @@ MCP 改名後要重開 Claude Code 才會載入 `wall42`。
 `./install.sh` 會先編譯、編譯成功才搬遷，編譯失敗時舊的 wall42 照常在跑。搬遷後想退回 wall42：
 
 ```bash
-bash ~/.local/share/wall42-migration/<時間>/restore.sh   # 搬回舊設定／執行檔／plist／log、桌布改回原值、重新載入 com.kang.wall42
+bash ~/.local/share/wall42-migration/<時間>/restore.sh   # 搬回舊設定／執行檔／plist／log、桌布改回原值、重新載入舊常駐
 ```
 
 restore.sh 不刪 wall42 的任何東西，只停掉 wall42 常駐；MCP 要照它最後印的提示手動改回。
