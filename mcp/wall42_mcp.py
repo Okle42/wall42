@@ -564,6 +564,7 @@ def wall42_sessions(count: int | None = None, busy: int = 0,
 def _win_exe() -> str | None:
     """WALL42_EXE 優先，其次安裝位置，最後 repo 裡的 Release 編譯產物。"""
     cands = [os.environ.get("WALL42_EXE") or "",
+             os.path.join(_LOCAL, "wall42", "bin", "wall42.exe"),      # windows\pack.ps1 的安裝位置
              os.path.join(_LOCAL, "wall42", "wall42.exe"),
              os.path.join(_LOCAL, "Programs", "wall42", "wall42.exe"),
              os.path.join(REPO, "windows", "Wall42.Win", "bin", "Release", "net8.0-windows", "wall42.exe")]

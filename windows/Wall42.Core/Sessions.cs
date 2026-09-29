@@ -13,7 +13,11 @@ public static class Paths
         ? Path.GetFullPath(Environment.ExpandEnvironmentVariables(d)) : Config.Dir;
 
     public static string LogFile => Environment.GetEnvironmentVariable("WALL42_LOG") is { Length: > 0 } p ? Path.GetFullPath(p)
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "wall42", "wall42.log");
+        : Path.Combine(Home, "wall42.log");
+
+    /// %LOCALAPPDATA%wall42, or WALL42_HOME (the installer's sandbox) — the same folder Log.cs and Package use.
+    public static string Home => Environment.GetEnvironmentVariable("WALL42_HOME") is { Length: > 0 } h ? Path.GetFullPath(h)
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "wall42");
 
     public static string StateDir => Path.GetDirectoryName(LogFile)!;
     public static string StatusFile => Path.Combine(StateDir, "status.json");
