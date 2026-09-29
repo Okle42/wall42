@@ -24,6 +24,7 @@ static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        if (Package.Dispatch(args) is int exit) return exit;          // --install / --uninstall / --version / first-run prompt
         var snap = Environment.GetEnvironmentVariable("WALL42_SNAPSHOT");
         try
         {

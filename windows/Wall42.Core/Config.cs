@@ -166,7 +166,9 @@ public sealed class Config
 
     /// %APPDATA%\wall42 — also where the control signals live. WALL42_CONFIG moves only config.json,
     /// never the signal folder (Mac: otherwise a test config would stop hearing MCP commands).
-    public static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "wall42");
+    /// WALL42_DATA moves the whole folder (installer e2e: never touch the real one).
+    public static string Dir => Environment.GetEnvironmentVariable("WALL42_DATA") is { Length: > 0 } d ? Path.GetFullPath(d)
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "wall42");
 
     public static string FilePath
     {

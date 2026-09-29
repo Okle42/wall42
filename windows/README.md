@@ -57,6 +57,22 @@ powershell -ExecutionPolicy Bypass -File tools\bench.ps1 -Label drawing -ForceDr
 `{"kind":"think","level":0.9,"seconds":120}`、`{"kind":"insight","strength":1}`、測試用 `{"kind":"debug-suspend","reason":"locked","on":true}`。
 log：`%LOCALAPPDATA%\wall42\wall42.log`（2 MB 輪替成 `wall42.old.log`）。
 
+## 安裝、打包（見 W2-安裝結果.md）
+
+```powershell
+powershell -ExecutionPolicy Bypass -File pack.ps1          # → dist\wall42.exe（內含 runtime，65 MB）、dist\wall42-small.exe（2.5 MB，需 .NET 8 Runtime）
+dist\wall42.exe                     # 雙擊：先跳出說明視窗，按「安裝」才動手
+wall42.exe --install [--quiet]      # 放到 %LOCALAPPDATA%\wall42\bin、presets 放到 %LOCALAPPDATA%\wall42\presets、
+                                    # 設定檔不存在才建立、HKCU Run 開機啟動、列在「設定 > 應用程式」、啟動（已裝就是更新）
+wall42.exe --uninstall [--quiet]    # 停掉、拿掉 Run 與清單項目、刪 bin 與 log；設定檔與 presets 保留（跟 Mac 一樣）
+wall42.exe --version | --run        # --run：不管在哪裡都直接跑（packed exe 不問安裝）
+powershell -ExecutionPolicy Bypass -File tests\w2_install_e2e.ps1   # 沙盒 e2e（先跑 pack.ps1）
+```
+
+從不改系統桌布。dev build 也能 `--install`（複製建置輸出的所有檔案＋repo 的 presets）。
+測試用沙盒：`WALL42_HOME`（取代 `%LOCALAPPDATA%\wall42`）、`WALL42_DATA`（取代 `%APPDATA%\wall42`，含 .signal）、`WALL42_REG_ROOT`（Run／Uninstall 的 HKCU 機碼）。
+圖示：`tools\make_icon.ps1` 產生 `Wall42.Win\wall42.ico`。
+
 ## 診斷開關（環境變數，名稱跟 Mac 相同）
 
 | 變數 | 用途 |
