@@ -11,7 +11,9 @@ public static class Presets
         if (!string.IsNullOrWhiteSpace(repo) && HasPresets(Path.Combine(repo, "presets"))) return Path.Combine(repo, "presets");
         for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
             if (HasPresets(Path.Combine(d.FullName, "presets"))) return Path.Combine(d.FullName, "presets");
-        var installed = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "wall42", "presets");
+        var home = Environment.GetEnvironmentVariable("WALL42_HOME");
+        var installed = Path.Combine(string.IsNullOrWhiteSpace(home)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "wall42") : home, "presets");
         return HasPresets(installed) ? installed : null;
     }
 
