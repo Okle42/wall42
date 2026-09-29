@@ -6,7 +6,7 @@ macOS 版的 Windows 移植：桌布之上、桌面圖示之下的動態粒子�
 | 階段 | 內容 | 狀態 |
 |---|---|---|
 | W1 | 地基：Core（設定、preset、World 模擬）＋測試；D3D11 渲染；掛在 WorkerW 底下；遮擋／鎖定／休眠停畫；診斷開關 | ✅（見 W1-結果.md） |
-| W2 | 系統匣圖示＋調參數面板（對應 MenuBar.swift／ControlPanel.swift） | 待做 |
+| W2 | 系統匣圖示＋調參數面板（對應 MenuBar.swift／ControlPanel.swift） | 2A 系統匣＋面板 ✅（見下「系統匣與控制面板」） |
 | W3 | MCP（`wall42_*` tools，走同一套檔案信號）、Claude session 光點的資料來源 | 待做 |
 | W4 | 桌布同步（把目前畫面設成系統桌布）、安裝／開機啟動／解除安裝 | 待做 |
 
@@ -17,6 +17,7 @@ windows\
   Wall42.Core\            net8.0 類別庫，沒有 UI、沒有 GPU，可單元測試
     Config.cs             Config.swift 同 schema；所有欄位可省略、型別錯只略過該欄；mtime 熱重載
     Presets.cs            repo 的 presets\*.json（之後加安裝版副本）
+    ConfigEdit.cs         系統匣／面板寫設定檔用：當 JSON 樹編輯（不認得的 key 保留、沒動的數字原文不變、原子寫入）、套 preset、比對目前是哪個 preset
     World.cs              World.swift 逐段移植：floating、連線 proximity／traffic／attention、脈衝、散景
     World.Effects.cs      snow、sand、Claude session 光點
     Layout.cs             螢幕（實體像素）→ 世界座標
@@ -30,8 +31,14 @@ windows\
     Occlusion.cs          「這台螢幕是不是整個被蓋住」的覆蓋計算
     App.cs                主迴圈、fps 節拍、停畫判斷、WinEvent、廣播訊息、每秒 tick、log
     Program.cs            進入點、環境變數、WALL42_SNAPSHOT
+    App.Ui.cs             App 的 UI 那一半：系統匣／面板的進入點、手動暫停、即時套用、選單與拖動時照樣出幀、關閉後 trim
+    Tray.cs               系統匣圖示（Shell_NotifyIcon）＋右鍵選單（TrackPopupMenu），對應 MenuBar.swift
+    ControlPanel.cs       調參數面板（自己畫的 Win32 視窗，資料驅動），對應 ControlPanel.swift
+    Canvas.cs             面板用的 DIB 畫布（逐像素抗鋸齒圓角／圓／線＋GDI ClearType 文字）、圖示產生器
+    UiNative.cs           系統匣／面板用的 Win32
   tools\Inspect\          唯讀檢查：Progman／WorkerW 階層、視窗樣式、點擊命中、PrintWindow 截桌面層
   tools\bench.ps1         實機量測：啟動 → 暖機 → 量 CPU／記憶體 → 檢查 → 依 pid 確認結束
+  tools\UiProbe\          測試驅動：只對指定 pid 的視窗送選單命令、開面板（不搶焦點）、PrintWindow 截選單／面板
 ```
 
 ## 建置、測試、執行
@@ -72,6 +79,22 @@ powershell -ExecutionPolicy Bypass -File tests\w2_install_e2e.ps1   # 沙盒 e2e
 從不改系統桌布。dev build 也能 `--install`（複製建置輸出的所有檔案＋repo 的 presets）。
 測試用沙盒：`WALL42_HOME`（取代 `%LOCALAPPDATA%\wall42`）、`WALL42_DATA`（取代 `%APPDATA%\wall42`，含 .signal）、`WALL42_REG_ROOT`（Run／Uninstall 的 HKCU 機碼）。
 圖示：`tools\make_icon.ps1` 產生 `Wall42.Win\wall42.ico`。
+
+## 系統匣與控制面板
+
+- **系統匣圖示**（`ui.menuBar`，同 Mac 的 key，預設開，熱重載即時開關）：左鍵＝開控制面板，右鍵＝選單：
+  狀態列（fps・連線數・CPU／被遮住／已手動暫停／暫停原因）、忙碌程度長條、**風格**（presets 清單，目前這個打 ✓，切換＝寫設定檔）、
+  **忙碌程度**（系統負載／手動／關）、暫停繪製／繼續繪製、開啟控制面板…、開啟設定檔資料夾、結束 wall42。
+  選單跟著 Windows 深色／淺色。手動暫停走跟鎖定一樣的停畫出口（不 Present、不跑模擬），不寫進設定檔（同 Mac）。
+- **控制面板**：Mac 面板的所有列＋幀率、背景模式與三個背景色、Session 光點開關；數量用對數刻度（20–3000，sand 是 2400）。
+  拖動時直接套到桌布，停手 400 ms 後才寫檔；顏色點色塊開系統選色器，連線顏色右鍵改回「自動」；最上面選風格、「重設」回到開始改之前的風格。
+  寫檔一律經 `ConfigEdit`：不認得的 key 保留、沒動的值原文不變、先寫 `.tmp` 再取代；設定檔不是合法 JSON 時面板唯讀、不覆寫。
+  切風格時 preset 的 background／motion 取代目前的，但保留 `motion.activity`、`ui` 與其他頂層 key（例如別的功能的設定）。
+- **記憶體**：兩者都是純 Win32（沒有 WinForms／WPF），面板是自己畫的單一視窗（一張 DIB＋三個字型）。關閉就整個釋放，
+  選單或面板關掉後 GC＋`SetProcessWorkingSetSize(-1,-1)`（ShoWork42 設定視窗同一招）。
+- 選單、拖動面板視窗、選色器都是 modal loop，我們的主迴圈不會跑：期間用 thread timer 照樣出幀，桌布不會凍住。
+- 測試：`tools\UiProbe`（見檔頭）只對自己那個 pid 的視窗送命令、開面板時不搶焦點；`WALL42_THEME=light|dark` 覆寫面板主題、
+  `WALL42_OPEN_PANEL=x,y,noactivate` 啟動就開面板。
 
 ## 診斷開關（環境變數，名稱跟 Mac 相同）
 
