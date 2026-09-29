@@ -119,6 +119,7 @@ sealed unsafe partial class App : IDisposable
                 DispatchMessageW(ref msg);
             }
         }
+        AiExit();
         Log.Note($"exit: frames=[{string.Join(",", surfaces.Select(s => s.Frames))}] occlusionEvents={occEvents}");
         if (eventStats != null) Log.Note("events: " + string.Join(" ", eventStats.OrderByDescending(kv => kv.Value).Take(15).Select(kv => $"{kv.Key}={kv.Value}")));
         return 0;
@@ -396,6 +397,7 @@ sealed unsafe partial class App : IDisposable
         }
         HandleSignal();
         UiTick();
+        AiTick();                       // sessions, status file, wallpaper sync (App.Ai.cs)
         var (act, expired) = activity.Update(world.Config.Motion.Activity, cpu.Sample(), DateTime.Now);
         world.Activity = act;
         if (expired) Log.Note(">>> think expired");
@@ -418,7 +420,7 @@ sealed unsafe partial class App : IDisposable
 
     void HandleSignal()
     {
-        var sig = Signal.Take(Config.Dir);
+        var sig = Signal.Take(Paths.SignalDir);
         if (sig == null) return;
         switch (sig.Kind)
         {
@@ -440,7 +442,7 @@ sealed unsafe partial class App : IDisposable
                 Log.Note($">>> debug-force {forceDraw}");
                 break;
             default:
-                Log.Note($"⚠ unknown signal: {sig.Kind}");
+                if (!HandleAiSignal(sig)) Log.Note($"⚠ unknown signal: {sig.Kind}");
                 break;
         }
     }

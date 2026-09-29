@@ -10,6 +10,10 @@ macOS 版的 Windows 移植：桌布之上、桌面圖示之下的動態粒子�
 | W3 | MCP（`wall42_*` tools，走同一套檔案信號）、Claude session 光點的資料來源 | 待做 |
 | W4 | 桌布同步（把目前畫面設成系統桌布）、安裝／開機啟動／解除安裝 | 待做 |
 
+| W2 | 系統匣圖示＋調參數面板（對應 MenuBar.swift／ControlPanel.swift） | 待做 |
+| W2-AI | MCP（10 個 `wall42_*` tools，同一支 `mcp\wall42_mcp.py`）、狀態檔、Claude session 光點資料來源、桌布同步 | ✅（見下方「AI 連動」） |
+| W4 | 安裝／開機啟動／解除安裝 | 待做 |
+
 ## 結構
 
 ```
@@ -22,6 +26,8 @@ windows\
     World.Effects.cs      snow、sand、Claude session 光點
     Layout.cs             螢幕（實體像素）→ 世界座標
     Activity.cs           GetSystemTimes 系統負載、平滑、think 到期、.signal 檔案信號
+    Sessions.cs           Claude session 檔解析（pid＋procStart 防 pid 重用）、sessions.json 餵入、何時讀（只在有畫時）、路徑
+    PresetMatch.cs        目前設定是哪個 preset（忽略 activity／ui，同 _current_preset.py）
   Wall42.Core.Tests\      xunit：preset 全部可解析、世界步進不變量、多螢幕重映射、時鐘
   Wall42.Win\             net8.0-windows WinExe，AssemblyName wall42（PerMonitorV2 寫在 app.manifest）
     Shaders.hlsl          Renderer.swift 裡 Metal shader 的逐行 HLSL 版（執行期編譯，跟 Mac 一樣）
@@ -30,6 +36,8 @@ windows\
     Desktop.cs            列舉螢幕、找 WorkerW（24H2 與舊版兩條路）
     Occlusion.cs          「這台螢幕是不是整個被蓋住」的覆蓋計算
     App.cs                主迴圈、fps 節拍、停畫判斷、WinEvent、廣播訊息、每秒 tick、log
+    App.Ai.cs             （partial）session 光點更新、status.json、.sync-request、restore-wallpaper／status 信號
+    Wallpaper.cs          IDesktopWallpaper（逐螢幕）：讀目前桌布、備份一次、設定／還原；WALL42_SYNC_DRY 演練
     Program.cs            進入點、環境變數、WALL42_SNAPSHOT
     App.Ui.cs             App 的 UI 那一半：系統匣／面板的進入點、手動暫停、即時套用、選單與拖動時照樣出幀、關閉後 trim
     Tray.cs               系統匣圖示（Shell_NotifyIcon）＋右鍵選單（TrackPopupMenu），對應 MenuBar.swift
@@ -111,6 +119,8 @@ powershell -ExecutionPolicy Bypass -File tests\w2_install_e2e.ps1   # 沙盒 e2e
 | `WALL42_REPORT=秒` | log 狀態列間隔（預設 10；1 = 像 Mac 每秒一行） |
 | `WALL42_LOG=路徑` | log 位置 |
 | `WALL42_DEBUG_EVENTS=1` | 結束時記下哪些視窗事件（事件:class）最常把我們叫醒 |
+| `WALL42_SIGNAL_DIR=路徑` | 信號資料夾（.signal、.sync-request、sessions.json）搬去別處；只給測試用，預設固定 `%APPDATA%\wall42` |
+| `WALL42_SYNC_DRY=1` | 桌布同步／還原只演練：擷取、存 PNG、記下目前桌布，但**不**呼叫 SetWallpaper／SetPosition／SetBackgroundColor |
 
 ## 做法（對照 macOS 版）
 
@@ -137,6 +147,71 @@ powershell -ExecutionPolicy Bypass -File tests\w2_install_e2e.ps1   # 沙盒 e2e
     螢幕保護程式：每秒讀 `SPI_GETSCREENSAVERRUNNING`（沒有廣播）。
 - **活動度**：`GetSystemTimes` 差值 → minLoad／maxLoad 對應 → smoothing 指數平滑，跟 Mac 同公式；`.signal` 的 think（到期自動回復）與 insight。
 
+## AI 連動（MCP、session 光點、狀態檔、桌布同步）
+
+### MCP
+
+同一支 `mcp\wall42_mcp.py` 同時支援 macOS 與 Windows（`sys.platform` 分支，macOS 行為不變），10 個 tool 都能用：
+`wall42_status`、`wall42_list_presets`、`wall42_set_preset`、`wall42_set_activity`、`wall42_set`、`wall42_think`、`wall42_insight`、
+`wall42_sync_wallpaper`、`wall42_sessions`、`wall42_control`。
+
+```powershell
+# 需要 Python ≥3.10 與 mcp>=2,<3（檔頭的 uv script metadata 有寫；有 uv 就用 uv 跑，會自己裝在隔離環境）
+claude mcp add --scope user wall42 -- uv run --script C:\path\to\wall42\mcp\wall42_mcp.py
+# 或用已經裝好 mcp 套件的 python
+claude mcp add --scope user wall42 -- python C:\path\to\wall42\mcp\wall42_mcp.py
+```
+
+| 項目 | Windows 位置 |
+|---|---|
+| 設定檔 | `%APPDATA%\wall42\config.json`（`WALL42_CONFIG`） |
+| 信號 `.signal`、`.sync-request`、`sessions.json` | `%APPDATA%\wall42`（`WALL42_SIGNAL_DIR`），不跟著設定檔漂移 |
+| log、`status.json`、桌布 PNG、`backup\original-wallpaper.json` | `%LOCALAPPDATA%\wall42`（跟著 `WALL42_LOG` 的資料夾） |
+| `wall42_control` 的 exe | `WALL42_EXE` → `%LOCALAPPDATA%\wall42\wall42.exe` → `%LOCALAPPDATA%\Programs\wall42\wall42.exe` → repo 的 Release 產物 |
+
+- **即時狀態**讀 `status.json`（Mac 讀 log 最後一行）：running、pid＋procStart、state（visible／OCCLUDED／SUSPENDED／paused）、
+  每台螢幕 drawing／occluded／coveredBy／trimmed／targetFps、實測 fps、自身 CPU（單核與全機）、工作集／private、連線數、活動度、
+  thinking、preset（比對 presets\*.json）、effect、session 數、最後一次桌布同步。**每 5 秒最多重算一次**，先算一個不配置記憶體的指紋，
+  沒變就連 JSON 都不做；只有量測值在動的話 30 秒才重寫一次。MCP 要最新值時送 `{"kind":"status"}` 請它立刻重寫。
+- **running 判斷**：狀態檔的 pid 還活著**而且**建立時間等於 procStart；沒有狀態檔才退回 `tasklist` 找 wall42.exe。
+  （Windows 的 `os.kill(pid, 0)` 會 TerminateProcess，絕對不能拿來探測。）
+- **stop**：`taskkill /pid`（不帶 /f，送 WM_CLOSE，wall42 自己收尾），6 秒沒結束才 /f。**start**：detached 啟動 exe。
+
+### Claude session 光點
+
+`motion.sessions.enabled` 打開時（`sessions` preset 或 `wall42_sessions(enable=True)`），每個 Claude Code session 一個帶外環的常駐光點，
+位置由 sessionId 的 FNV 雜湊決定（跟 Mac 一樣，同一個 session 永遠在同一處）。
+
+- `source: auto`（預設）：讀 `%USERPROFILE%\.claude\sessions\<pid>.json`。算數的條件：**pid 活著，而且行程建立時間 == 檔案裡的 `procStart`**
+  （FILETIME；實機比對三個 session 完全相等，容許 10 ms）——session 死掉後 pid 被別的程式重用就不會誤算。`status == "busy"` 算忙碌。
+  `.key` 檔、壞檔、沒 pid 的略過。依 startedAt 排序。
+- `%APPDATA%\wall42\sessions.json` 存在（或 `source: file`）時優先：`{"count":5,"busy":2}` 或 `{"sessions":[{"id":"a","busy":true}]}`。
+- **只在有畫的時候讀**，最多每 2 秒一次；全部停畫時完全不碰資料夾（0 次檔案存取），恢復繪製的那一秒立刻重讀。
+
+### 桌布同步
+
+`wall42_sync_wallpaper()` 或手動建立 `%APPDATA%\wall42\.sync-request`（內容 `{"dry":true}` = 只演練）。常駐每秒檢查一次：
+
+1. 把每台螢幕**目前這一幀**離線渲染成該螢幕解析度的 PNG：`%LOCALAPPDATA%\wall42\wallpaper_{a|b}_{n}.png`（A/B 交替，刪掉另一格；
+   同路徑桌布會被快取不重繪）。World 不前進，停畫時也能拍。
+2. 用 `IDesktopWallpaper` 讀出每台螢幕目前的桌布、位置模式、背景色，**每次都寫進 log**；第一次同步前另存
+   `backup\original-wallpaper.json`（之後不覆寫，路徑已經是我們自己的 PNG 時也不存）。
+3. 依螢幕矩形對應 monitor ID，`SetWallpaper(id, png)`；位置模式是 tile／span 才改成 fill（圖跟螢幕一樣大，其餘模式都是 1:1）。
+4. 還原：`{"kind":"restore-wallpaper"}` 信號或 `wall42.exe --restore-wallpaper`（`--dry` 只演練），照備份設回每台螢幕的路徑、位置、背景色。
+
+`WALL42_SYNC_DRY=1` 時第 3、4 步只寫 log（`would SetWallpaper(...)`）。
+
+### 實測（i5-8250U、單螢幕 2256×1504、sessions preset 423 顆、3 個活的 Claude session）
+
+| 情境 | CPU（單核） | CPU（全機） | 工作集 |
+|---|---|---|---|
+| 被蓋住停畫、sessions 開著（跟 W1 同時跑、同條件對照，量 150 s） | 0.458% | 0.057% | 84 MB |
+| 　同時段 W1（無 AI 部分） | 0.385% | 0.048% | 76 MB |
+| 繪製中＋session 光點（debug-force，量 40 s） | 4.65% | 0.58% | 107 MB |
+
+- 停畫時 AI 部分的每秒 tick 平均 0.4 ms（log 結束行 `ai: … aiTick=`），差距 ≈0.07% 單核；session 資料夾 0 次讀取。
+- 桌布同步一次 140–270 ms（渲染＋PNG 編碼 2256×1504），之後強制 GC 把 LOH 上的畫面緩衝還回去。
+
 ## 已知坑
 
 1. **HLSL 原始碼必須是純 ASCII**：Vortice 把字串交給 D3DCompile 的長度被非 ASCII 字元打亂，註解裡一個「→」就會變成
@@ -154,3 +229,7 @@ powershell -ExecutionPolicy Bypass -File tests\w2_install_e2e.ps1   # 沙盒 e2e
 9. 舊版 Windows（24H2 以前）的 WorkerW 在我們結束後可能留著最後一幀：結束時 `RedrawWindow(WorkerW)` 請 Explorer 重畫；
    24H2 實測結束後直接回到原本的桌布，不需要任何還原（我們從不改系統桌布設定）。
 10. PowerShell 5.1：含中文的 .ps1 要 UTF-8 with BOM；Git Bash 傳 `/參數` 要 `MSYS_NO_PATHCONV=1`。
+11. **8.3 短檔名路徑很貴**：`%TEMP%` 可能是 `C:\Users\ABCDEF~1\…`，每次 `File.Exists` 要解析短名，實測 1.3 ms（長路徑 0.09 ms）。
+    測試用的設定／信號資料夾請用長路徑，否則停畫 CPU 會被量高。
+12. `mcp` 套件沒裝時，repo 裡的 `mcp\` 資料夾會被 Python 當成 namespace package（`import mcp` 不報錯但沒有 `mcp.server`）；
+    直接測 tool 函式時要自己注入替身模組。

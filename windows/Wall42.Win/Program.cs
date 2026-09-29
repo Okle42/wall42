@@ -29,6 +29,8 @@ static class Program
         try
         {
             if (!string.IsNullOrWhiteSpace(snap)) return Snapshot(Path.GetFullPath(snap));
+            // uninstall: put back the wallpaper recorded before the first sync (Wallpaper.cs); --dry only logs
+            if (args.Contains("--restore-wallpaper")) return Wallpaper.Restore(Wallpaper.EnvDry || args.Contains("--dry")) ? 0 : 1;
             using var app = new App();
             return app.Run();
         }
