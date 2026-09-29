@@ -8,7 +8,7 @@ namespace Wall42;
 /// session), one child surface per monitor under the desktop WorkerW, one World, one frame loop.
 /// Drawing stops completely (no Present, no sim) when every surface is paused; the thread then sleeps in
 /// MsgWaitForMultipleObjectsEx and only wakes for window events and the 1 s tick.
-sealed unsafe class App : IDisposable
+sealed unsafe partial class App : IDisposable
 {
     const uint TIMER_TICK = 1, TIMER_OCC = 2, TIMER_LAYOUT = 3, TIMER_REATTACH = 4, TIMER_QUIT = 5;
 
@@ -91,6 +91,7 @@ sealed unsafe class App : IDisposable
         Log.Note($"start pid={Environment.ProcessId} gpu={gpu.AdapterName} particles={cfg.Motion.ParticleCount}/primary-area fps={cfg.Motion.Fps} " +
                  $"effect={cfg.Motion.Effect} config={Config.FilePath}" + (forceDraw ? " FORCE_DRAW" : "") + (noDraw ? " NO_DRAW" : ""));
         BuildSurfaces(true);
+        UiStart();                                   // tray icon + control panel (App.Ui.cs)
         SetTimer(hwnd, (UIntPtr)TIMER_TICK, 1000, IntPtr.Zero);
         if (Program.EnvInt("WALL42_DURATION") is > 0 and var d) SetTimer(hwnd, (UIntPtr)TIMER_QUIT, (uint)d * 1000, IntPtr.Zero);
 
@@ -391,8 +392,10 @@ sealed unsafe class App : IDisposable
             world.Apply(cfg);
             SyncFps();
             Log.Note($"♻ config reloaded particles={cfg.Motion.ParticleCount} fps={cfg.Motion.Fps} effect={cfg.Motion.Effect}");
+            UiConfigReloaded();
         }
         HandleSignal();
+        UiTick();
         var (act, expired) = activity.Update(world.Config.Motion.Activity, cpu.Sample(), DateTime.Now);
         world.Activity = act;
         if (expired) Log.Note(">>> think expired");
@@ -480,6 +483,7 @@ sealed unsafe class App : IDisposable
 
     public void Dispose()
     {
+        UiStop();
         foreach (var hk in hooks) UnhookWinEvent(hk);
         foreach (var hk in locHooks.Values) UnhookWinEvent(hk);
         foreach (var s in surfaces) s.Dispose();
