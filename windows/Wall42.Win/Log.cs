@@ -5,7 +5,7 @@ namespace Wall42;
 static class Log
 {
     public static readonly string PathName = Environment.GetEnvironmentVariable("WALL42_LOG") is { Length: > 0 } p ? p
-        : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "wall42", "wall42.log");
+        : System.IO.Path.Combine(Package.Home, "wall42.log");
 
     public static void Note(string s)
     {

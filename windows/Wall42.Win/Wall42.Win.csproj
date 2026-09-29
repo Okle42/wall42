@@ -14,6 +14,11 @@
     <Version>0.1.0</Version>
     <Product>wall42</Product>
     <Description>wall42：桌布層動態粒子（桌布之上、桌面圖示之下）</Description>
+    <AssemblyTitle>wall42</AssemblyTitle>
+    <Company>wall42</Company>
+    <Copyright>Kang</Copyright>
+    <!-- tools\make_icon.ps1 -->
+    <ApplicationIcon>wall42.ico</ApplicationIcon>
     <!-- resident and mostly paused: small footprint over peak throughput -->
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <TieredPGO>false</TieredPGO>
@@ -29,6 +34,12 @@
     <PackageReference Include="Vortice.D3DCompiler" Version="3.8.3" />
     <!-- the Metal shaders' HLSL port; compiled at startup like the Mac compiles its .metal source -->
     <EmbeddedResource Include="Shaders.hlsl" LogicalName="Shaders.hlsl" />
+  </ItemGroup>
+
+  <!-- pack.ps1 (-p:Wall42Pack=true): the presets ride inside the single wall42.exe and are written to
+       %LOCALAPPDATA%\wall42\presets at install time. Their presence is also what makes a double-click ask to install. -->
+  <ItemGroup Condition="'$(Wall42Pack)' == 'true'">
+    <EmbeddedResource Include="..\..\presets\*.json" LogicalName="presets/%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>
