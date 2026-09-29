@@ -34,11 +34,13 @@ sealed unsafe class App : IDisposable
     readonly CpuLoad cpu = new();
     readonly ActivityController activity = new();
     bool quit, occArmed, needRebuild, needGpu;
-    int tickCount, occEvents;
+    int tickCount, occEvents, rawEvents;
+    long tickTicks, tickOccTicks;     // cumulative time spent in the 1 s tick (and its occlusion part)
+    readonly Dictionary<string, int>? eventStats = Program.EnvBool("WALL42_DEBUG_EVENTS") ? new() : null;
     readonly Stopwatch clock = Stopwatch.StartNew();
     double Now => clock.Elapsed.TotalSeconds;
     double lastReport, lastPauseChange;
-    TimeSpan lastCpu;
+    double lastCpu;
     int lastSteps;
 
     public App()
@@ -79,9 +81,10 @@ sealed unsafe class App : IDisposable
                      (EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND),
                      (EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND),
                      (EVENT_OBJECT_SHOW, EVENT_OBJECT_HIDE),
-                     (EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE),
                      (EVENT_OBJECT_CLOAKED, EVENT_OBJECT_UNCLOAKED) })
             hooks.Add(SetWinEventHook(lo, hi, IntPtr.Zero, eventProc, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS));
+        // LOCATIONCHANGE (the noisy one) is managed in SyncLocationHooks: system-wide while drawing,
+        // only the covering windows' processes while paused
 
         var cfg = world.Config;
         Log.Note($"start pid={Environment.ProcessId} gpu={gpu.AdapterName} particles={cfg.Motion.ParticleCount}/primary-area fps={cfg.Motion.Fps} " +
@@ -115,6 +118,7 @@ sealed unsafe class App : IDisposable
             }
         }
         Log.Note($"exit: frames=[{string.Join(",", surfaces.Select(s => s.Frames))}] occlusionEvents={occEvents}");
+        if (eventStats != null) Log.Note("events: " + string.Join(" ", eventStats.OrderByDescending(kv => kv.Value).Take(15).Select(kv => $"{kv.Key}={kv.Value}")));
         return 0;
     }
 
@@ -218,6 +222,7 @@ sealed unsafe class App : IDisposable
             s.NextDue = now;
         }
         if (changed) SyncFps();
+        SyncLocationHooks();
     }
 
     // ── occlusion ───────────────────────────────────────────────────
@@ -254,6 +259,23 @@ sealed unsafe class App : IDisposable
         UpdateDrawing();
     }
 
+    /// Every moving window in the system sends LOCATIONCHANGE (a glow that follows a terminal: ~20/s, all
+    /// day). While everything is paused only the covering windows can uncover a monitor, so listen to their
+    /// processes only (measured paused: ~0.6% → ~0.26% of one core with such a glow running).
+    readonly Dictionary<uint, IntPtr> locHooks = new();      // pid (0 = everyone) → hook
+
+    void SyncLocationHooks()
+    {
+        var want = surfaces.Count == 0 || surfaces.Any(s => s.Drawing) ? new HashSet<uint> { 0 } : new HashSet<uint>(Occlusion.CountedPids);
+        foreach (var pid in locHooks.Keys.Where(k => !want.Contains(k)).ToList()) { UnhookWinEvent(locHooks[pid]); locHooks.Remove(pid); }
+        foreach (var pid in want.Where(k => !locHooks.ContainsKey(k)))
+        {
+            var hk = SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, IntPtr.Zero, eventProc, pid, 0,
+                WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+            if (hk != IntPtr.Zero) locHooks[pid] = hk;
+        }
+    }
+
     void ArmOcc(uint ms)
     {
         if (occArmed) return;          // don't re-arm: during a drag events come every frame and would starve it
@@ -263,9 +285,14 @@ sealed unsafe class App : IDisposable
 
     void OnWinEvent(IntPtr hook, uint ev, IntPtr h, int idObject, int idChild, uint thread, uint time)
     {
+        rawEvents++;
         if (idObject != OBJID_WINDOW || idChild != 0 || h == IntPtr.Zero) return;   // carets, cursors, menus' items…
         if (ev != EVENT_SYSTEM_FOREGROUND && GetAncestor(h, GA_ROOT) != h) return;   // only top-level windows matter
+        if (Occlusion.SeeThrough(ExStyle(h))) return;        // click-through overlays (e.g. a glow following a window) never cover
+        // all paused: a window we don't count as cover can only add cover, never remove it (z-order is irrelevant: we're at the bottom)
+        if (surfaces.Count > 0 && !surfaces.Any(s => s.Drawing) && !Occlusion.Counted.Contains(h)) return;
         occEvents++;
+        if (eventStats != null) { var k = $"{ev:X}:{ClassOf(h)}"; eventStats[k] = eventStats.GetValueOrDefault(k) + 1; }
         ArmOcc(60);
     }
 
@@ -356,6 +383,7 @@ sealed unsafe class App : IDisposable
     void Tick()
     {
         tickCount++;
+        long t0 = Stopwatch.GetTimestamp();
         if (watcher.Changed())
         {
             var cfg = Program.LoadConfig();
@@ -372,10 +400,15 @@ sealed unsafe class App : IDisposable
         // a surface lost its parent (Explorer restart without TaskbarCreated reaching us, WorkerW recreated)
         if (worker == IntPtr.Zero || !IsWindow(worker) || surfaces.Any(s => s.Dead || !IsWindow(s.Hwnd) || GetParent(s.Hwnd) != worker))
             needRebuild = true;
-        RecomputeOcclusion();          // fallback for moves the events missed
+        long t1 = Stopwatch.GetTimestamp();
+        // fallback for what the events missed: every second while drawing, every 2 s while all paused (the scoped
+        // hooks catch the covering windows moving; this only has to catch the rare silent change)
+        if (surfaces.Any(s => s.Drawing) || tickCount % 2 == 0) RecomputeOcclusion();
+        tickOccTicks += Stopwatch.GetTimestamp() - t1;
         UpdateFocus();
         foreach (var s in surfaces)     // paused for a while: give the big buffers back
             if (!s.Drawing && !s.Trimmed && Now - s.PausedAt > 5) s.Trim(Color.Hex(world.Config.Background.EdgeColor));
+        tickTicks += Stopwatch.GetTimestamp() - t0;
         if (tickCount % reportEvery == 0) Report();
     }
 
@@ -426,9 +459,8 @@ sealed unsafe class App : IDisposable
     {
         double now = Now, dt = now - lastReport;
         lastReport = now;
-        using var p = Process.GetCurrentProcess();
-        var cpuT = p.TotalProcessorTime;
-        double cpuPct = lastCpu == TimeSpan.Zero || dt <= 0 ? 0 : (cpuT - lastCpu).TotalSeconds / dt * 100;
+        var (cpuT, ws, priv) = SelfUsage();
+        double cpuPct = lastCpu == 0 || dt <= 0 ? 0 : (cpuT - lastCpu) / dt * 100;
         lastCpu = cpuT;
         int steps = world.StepCount - lastSteps; lastSteps = world.StepCount;
         var fps = string.Join("/", surfaces.Select(s => { var d = s.Frames - s.LastFrames; s.LastFrames = s.Frames; return (dt > 0 ? d / dt : 0).ToString("0.0"); }));
@@ -436,13 +468,14 @@ sealed unsafe class App : IDisposable
             : surfaces.Count > 0 && surfaces.All(s => s.Occluded) ? "OCCLUDED" : "visible";
         if (forceDraw) state += "(forced)";
         Log.Note($"{state,-12} fps=[{fps}] steps/s={(dt > 0 ? steps / dt : 0):0.0} cpu={cpuPct:0.00}%(one core) links={world.LastLinkCount} " +
-                 $"act={world.Activity:0.00} ws={p.WorkingSet64 / 1048576.0:0.0}MB private={p.PrivateMemorySize64 / 1048576.0:0.0}MB " +
-                 $"events={occEvents}" + (now - lastPauseChange < 1.1 ? " (just switched)" : ""));
+                 $"act={world.Activity:0.00} ws={ws:0.0}MB private={priv:0.0}MB " +
+                 $"events={occEvents}/{rawEvents} tick={tickTicks * 1000.0 / Stopwatch.Frequency:0.0}ms(occ {tickOccTicks * 1000.0 / Stopwatch.Frequency:0.0}ms)" + (now - lastPauseChange < 1.1 ? " (just switched)" : ""));
     }
 
     public void Dispose()
     {
         foreach (var hk in hooks) UnhookWinEvent(hk);
+        foreach (var hk in locHooks.Values) UnhookWinEvent(hk);
         foreach (var s in surfaces) s.Dispose();
         surfaces.Clear();
         // make Explorer repaint where we were (pre-24H2 WorkerWs otherwise keep our last frame)

@@ -14,6 +14,8 @@ namespace Wall42;
 ///   WALL42_SEED=n         random seed (snapshots default to 42, so they are reproducible)
 ///   WALL42_ACTIVITY=0..1  snapshot activity (default: manualLevel for source=manual, else 0 = idle machine)
 ///   WALL42_REPORT=s       status line interval in the log (default 10 s; 1 = like the Mac)
+///   WALL42_LOG=path       log file (default %LOCALAPPDATA%\wall42\wall42.log)
+///   WALL42_DEBUG_EVENTS=1 on exit, log which window events (event:class) woke us most
 static class Program
 {
     public static int? EnvInt(string k) => int.TryParse(Environment.GetEnvironmentVariable(k), out var v) ? v : null;

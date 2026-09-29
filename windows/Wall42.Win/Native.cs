@@ -145,6 +145,26 @@ static unsafe class Native
     public static extern bool SetWaitableTimer(IntPtr timer, ref long due, int period, IntPtr cb, IntPtr arg, bool resume);
     [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROCESS_MEMORY_COUNTERS_EX
+    {
+        public uint cb, PageFaultCount; public nuint PeakWorkingSetSize, WorkingSetSize, QuotaPeakPagedPoolUsage, QuotaPagedPoolUsage,
+            QuotaPeakNonPagedPoolUsage, QuotaNonPagedPoolUsage, PagefileUsage, PeakPagefileUsage, PrivateUsage;
+    }
+    [DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll")] public static extern bool GetProcessTimes(IntPtr h, out long creation, out long exit, out long kernel, out long user);
+    [DllImport("kernel32.dll")] public static extern bool K32GetProcessMemoryInfo(IntPtr h, out PROCESS_MEMORY_COUNTERS_EX pmc, int size);
+
+    /// own CPU seconds, working set and private bytes, without System.Diagnostics.Process (which snapshots
+    /// every process in the system on each query: ~ms, too much for a once-a-few-seconds status line)
+    public static (double CpuSeconds, double WorkingSetMB, double PrivateMB) SelfUsage()
+    {
+        var h = GetCurrentProcess();
+        GetProcessTimes(h, out _, out _, out var k, out var u);
+        K32GetProcessMemoryInfo(h, out var m, sizeof(PROCESS_MEMORY_COUNTERS_EX));
+        return ((k + u) / 1e7, m.WorkingSetSize / 1048576.0, m.PrivateUsage / 1048576.0);
+    }
+
     public static string ClassOf(IntPtr hwnd)
     {
         char* buf = stackalloc char[128];
