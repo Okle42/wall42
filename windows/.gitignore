@@ -1,0 +1,6 @@
+bin/
+obj/
+*.png
+*.log
+dist/
+tests/*_result.txt
