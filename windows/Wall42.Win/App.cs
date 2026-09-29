@@ -12,7 +12,8 @@ sealed unsafe class App : IDisposable
 {
     const uint TIMER_TICK = 1, TIMER_OCC = 2, TIMER_LAYOUT = 3, TIMER_REATTACH = 4, TIMER_QUIT = 5;
 
-    readonly bool forceDraw = Program.EnvBool("WALL42_FORCE_DRAW"), noDraw = Program.EnvBool("WALL42_NO_DRAW"),
+    bool forceDraw = Program.EnvBool("WALL42_FORCE_DRAW");
+    readonly bool noDraw = Program.EnvBool("WALL42_NO_DRAW"),
         onlyMain = Program.EnvBool("WALL42_ONLY_MAIN");
     readonly int reportEvery = Math.Max(1, Program.EnvInt("WALL42_REPORT") ?? 10);
 
@@ -407,7 +408,7 @@ sealed unsafe class App : IDisposable
         tickOccTicks += Stopwatch.GetTimestamp() - t1;
         UpdateFocus();
         foreach (var s in surfaces)     // paused for a while: give the big buffers back
-            if (!s.Drawing && !s.Trimmed && Now - s.PausedAt > 5) s.Trim(Color.Hex(world.Config.Background.EdgeColor));
+            if (!s.Drawing && !s.Trimmed && Now - s.PausedAt > 5) { s.Trim(Color.Hex(world.Config.Background.EdgeColor)); Log.Note($"{s.Mon.Device} buffers trimmed={s.Trimmed}"); }
         tickTicks += Stopwatch.GetTimestamp() - t0;
         if (tickCount % reportEvery == 0) Report();
     }
@@ -429,6 +430,11 @@ sealed unsafe class App : IDisposable
                 break;
             case "debug-suspend":       // test hook: the same path as locking
                 SetSuspended(sig.Str("reason") ?? "debug", sig.Bool("on", true));
+                break;
+            case "debug-force":         // test hook: WALL42_FORCE_DRAW at runtime (resume a paused, trimmed surface)
+                forceDraw = sig.Bool("on", true);
+                UpdateDrawing();
+                Log.Note($">>> debug-force {forceDraw}");
                 break;
             default:
                 Log.Note($"⚠ unknown signal: {sig.Kind}");
