@@ -120,7 +120,8 @@ static class Package
         var stopped = StopInstalled();
         SetAutostart(false);
         Unregister();
-        foreach (var f in new[] { "wall42.log", "wall42.old.log" }) try { File.Delete(Path.Combine(Home, f)); } catch { }
+        // the status file (MCP) goes too; synced wallpaper PNGs and the backup stay: one may be the system wallpaper now
+        foreach (var f in new[] { "wall42.log", "wall42.old.log", "status.json" }) try { File.Delete(Path.Combine(Home, f)); } catch { }
         string files;
         if (!Directory.Exists(Bin)) files = "no files";
         else if (RunningInstalled)
