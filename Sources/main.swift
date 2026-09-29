@@ -15,6 +15,12 @@ let FORCE_DRAW = envBool("WALL42_FORCE_DRAW", false)
 let SNAPSHOT   = ProcessInfo.processInfo.environment["WALL42_SNAPSHOT"]
 // 量測用：只開主螢幕（單螢幕基準），其他螢幕不建視窗
 let ONLY_MAIN  = envBool("WALL42_ONLY_MAIN", false)
+// 每秒一行統計（bench 腳本解析用）。常駐時改 60 秒一行，免得 log 一天長 7MB
+let VERBOSE    = DURATION > 0 || envBool("WALL42_VERBOSE", false)
+// 測試用：第一次建立的畫面不讓 display link 觸發，重現開機後 0 幀，驗證看門狗
+let SIMULATE_STALL = envBool("WALL42_SIMULATE_STALL", false)
+/// log 超過這個大小就清空重來（launchd 以 append 開檔，無法由外部輪替）
+let LOG_MAX_BYTES: UInt64 = 20 * 1024 * 1024
 
 func stamp() -> String {
     let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
@@ -36,13 +42,14 @@ final class Surface {
     var pending: DispatchWorkItem?
     var lastFrames = 0
 
-    init(screen: NSScreen, renderer: Renderer, device: MTLDevice, fps: Int) {
+    init(screen: NSScreen, renderer: Renderer, device: MTLDevice, fps: Int, stall: Bool = false) {
         self.screen = screen
         self.renderer = renderer
         displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
         let frame = screen.frame
         view = MTKView(frame: CGRect(origin: .zero, size: frame.size), device: device)
-        view.delegate = renderer
+        // stall：不接 delegate，draw(in:) 永遠不會被呼叫，等同 display link 不觸發
+        view.delegate = stall ? nil : renderer
         view.colorPixelFormat = .bgra8Unorm
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         view.preferredFramesPerSecond = fps
@@ -86,6 +93,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var lastReport = CFAbsoluteTimeGetCurrent()
     private var lastSteps = 0
+    private var stalledSeconds = 0
+    private var stallRebuilds = 0
+    private var stallSimulated = false
+    private var reportTick = 0
     private var menuBar: MenuBarController?
     private var panel: ControlPanel?
     // 給選單列讀的即時狀態
@@ -104,6 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configMTime: Date?
 
     func applicationDidFinishLaunching(_ note: Notification) {
+        trimLogIfNeeded()      // 先清再寫，啟動訊息才不會跟著被清掉
         var (cfg, warn) = Config.load()
         if let w = warn { log("⚠ \(w)") }
         // 測試用覆寫
@@ -191,7 +203,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             r.viewOrigin = sl.origin
             r.viewSize = sl.size
             r.pxScale = Float(screen.backingScaleFactor)
-            let sf = Surface(screen: screen, renderer: r, device: device, fps: cfg.motion.fps)
+            let sf = Surface(screen: screen, renderer: r, device: device, fps: cfg.motion.fps,
+                             stall: SIMULATE_STALL && !stallSimulated)
             surfaces.append(sf)
             sf.window.orderFront(nil)
             NotificationCenter.default.addObserver(
@@ -200,6 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if let sf = sf { self?.occlusionChanged(sf) }
                 }
         }
+        stallSimulated = true
         syncFPSIfNeeded(cfg)
         log("螢幕數 \(surfaces.count)")
     }
@@ -470,8 +484,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         log(">>> 螢幕 \(sf.displayID) \(isOccluded ? "OCCLUDED（停止繪製）" : "VISIBLE（恢復繪製）")")
     }
 
+    /// stdout 是 launchd 開的 log 檔（O_APPEND），超過上限就截成 0，下一行從檔頭寫起。
+    /// 每 10 分鐘檢查一次；stdout 不是一般檔案（終端機、管線）時什麼都不做。
+    private func trimLogIfNeeded() {
+        guard reportTick % 600 == 0 else { return }
+        var st = stat()
+        guard fstat(STDOUT_FILENO, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG,
+              UInt64(st.st_size) > LOG_MAX_BYTES else { return }
+        ftruncate(STDOUT_FILENO, 0); lseek(STDOUT_FILENO, 0, SEEK_SET)
+        log("log 超過 \(LOG_MAX_BYTES / 1024 / 1024)MB，已清空")
+    }
+
     // ── 每秒：熱重載檢查 ＋ 統計 ─────────────────────────────────
     private func tick() {
+        trimLogIfNeeded()
         reloadIfChanged()
         updateFocus()
         updateSessions()
@@ -724,15 +750,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastCPUPercent = cpuPct
 
         let settling = now - lastPauseChange < 1.1
+        reportTick += 1
+        // 常駐時只在整分鐘寫統計；異常（仍在繪製、0 幀）不受限，當下就寫
+        let periodic = VERBOSE || reportTick % 60 == 1
         if !suspendReasons.isEmpty {
             let verdict = delta == 0 ? "OK" : (settling ? "（剛切換）" : "⚠ 仍在繪製")
+            guard periodic || delta > 0 else { return }
             log(String(format: "SUSPENDED(%@)  cpu=%.2f%%  frames=+%d %@  mem=%.1fMB",
                        suspendReasons.sorted().joined(separator: ","), cpuPct, delta, verdict, mem))
         } else if isOccluded {
             let verdict = delta == 0 ? "OK" : (settling ? "（剛切換）" : "⚠ 仍在繪製")
+            guard periodic || delta > 0 else { return }
             log(String(format: "OCCLUDED  cpu=%.2f%%  frames=+%d %@  mem=%.1fMB",
                        cpuPct, delta, verdict, mem))
         } else {
+            // 看門狗：開機登入時 WindowServer 還沒就緒就啟動，MTKView 的 display link
+            // 會綁到失效的螢幕，之後永遠不呼叫 draw(in:)（實測 fps=0、steps=0 持續不停）。
+            // 該畫而連續 5 秒一幀都沒有 -> 重建畫面；重建後仍不畫就不再重試。
+            let shouldDraw = !manuallyPaused && surfaces.contains { !$0.view.isPaused }
+            stalledSeconds = (shouldDraw && delta == 0 && !settling) ? stalledSeconds + 1 : 0
+            if stalledSeconds >= 5 && stallRebuilds < 3 {
+                stalledSeconds = 0
+                stallRebuilds += 1
+                log(">>> ⚠ 該畫卻連續 5 秒 0 幀（display link 沒觸發），重建畫面（第 \(stallRebuilds) 次）")
+                rebuildSurfaces(world.config)
+                return
+            }
+            if delta > 0 { stallRebuilds = 0 }
+            guard periodic || stalledSeconds > 0 else { return }
             let vis = surfaces.filter { !$0.occluded }.count
             log(String(format: "visible   screens=%d/%d  fps=%.1f [%@]  steps=%d  cpu=%.2f%%  links=%d  act=%.2f  mem=%.1fMB",
                        vis, surfaces.count, fps, perScreen.joined(separator: "/"), steps,

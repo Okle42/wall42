@@ -282,6 +282,8 @@ restore.sh 不刪 wall42 的任何東西，只停掉 wall42 常駐；MCP 要照�
 - 螢幕休眠、系統睡眠、鎖定、螢幕保護程式、切換使用者時一律停畫並釋放 drawable（log 會出現 `SUSPENDED(原因)`），醒來從當下時間接續，粒子不會瞬移。
 - 全螢幕 App 所在的螢幕會自動停畫（遮擋判定），另一台照畫。Spaces／Stage Manager 驗證紀錄見 `docs/bench-20260926.md`。
 - 記憶體 81MB 幾乎全是 AppKit＋Metal 框架的固定開銷，程式自己只用 0.2–0.4MB。
+- 開機登入時若比 WindowServer 早就緒，MTKView 的 display link 可能綁到失效的螢幕、永遠不畫（log 一直是 `fps=0.0 steps=0`）。看門狗偵測到「該畫卻連續 5 秒 0 幀」會自動重建畫面（log 出現 `⚠ 該畫卻連續 5 秒 0 幀`），最多連試 3 次。
+- log（`~/Library/Logs/wall42.log`）常駐時每 60 秒寫一行統計，事件與異常當下寫；超過 20MB 自動清空。
 - 設定檔新增欄位一律要宣告成 Optional，否則舊設定檔缺少該 key 會讓 Codable 整份解碼失敗、使用者的設定被丟回預設值。
 
 ## 診斷開關（環境變數）
@@ -291,7 +293,9 @@ restore.sh 不刪 wall42 的任何東西，只停掉 wall42 常駐；MCP 要照�
 | `WALL42_FORCE_DRAW=1` | 忽略遮擋一直畫，量峰值消耗用 |
 | `WALL42_NO_DRAW=1` | 只 clear 不下 draw call，量框架底線 |
 | `WALL42_SNAPSHOT=路徑` | 第 90 幀存一張 PNG |
-| `WALL42_DURATION=秒` | 跑幾秒後自動結束 |
+| `WALL42_DURATION=秒` | 跑幾秒後自動結束（同時開啟每秒統計，bench 腳本靠這個） |
+| `WALL42_VERBOSE=1` | 常駐時也每秒寫一行統計（預設 60 秒一行） |
+| `WALL42_SIMULATE_STALL=1` | 第一批畫面不接 renderer，重現開機 0 幀，驗證看門狗會自動重建 |
 | `WALL42_PARTICLES` / `WALL42_FPS` | 覆寫設定檔，測試用 |
 | `WALL42_ONLY_MAIN=1` | 只開主螢幕，量單螢幕基準用 |
 | `WALL42_REPO=路徑` | repo 位置（presets／README／backup）。`./install.sh` 會寫進 LaunchAgent；不設就是 `~/github-repos/wall42` |

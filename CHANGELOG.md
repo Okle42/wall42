@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 2026-09-30：開機 0 幀自動修復、log 瘦身
+
+- 修正：重開機登入後 wall42 常駐在跑、視窗也在，但從頭到尾 `fps=0.0 steps=0`，桌布不動。
+  MTKView 的 display link 在螢幕尚未就緒時建立，之後永遠不觸發 `draw(in:)`；手動重啟即恢復。
+  新增看門狗：沒暫停、沒遮擋卻連續 5 秒 0 幀就重建畫面（最多連試 3 次，畫出來就歸零）。
+  `WALL42_SIMULATE_STALL=1` 可重現並驗證。
+- 優化：log 原本每秒一行，4 天長到 28MB。常駐時改成 60 秒一行統計，事件與異常照常當下寫；
+  `WALL42_DURATION`（bench）或 `WALL42_VERBOSE=1` 時維持每秒一行。log 超過 20MB 自動清空。
+- 詳見 `docs/優化修正計畫.md`。
+
 ## 2026-09-27：改名 wall42 → wall42
 
 專案原名 **wall42**，全面改名為 **wall42**（程式、執行檔、LaunchAgent label、設定目錄、log、
