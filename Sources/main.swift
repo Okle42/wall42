@@ -19,6 +19,9 @@ let ONLY_MAIN  = envBool("WALL42_ONLY_MAIN", false)
 let VERBOSE    = DURATION > 0 || envBool("WALL42_VERBOSE", false)
 // 測試用：第一次建立的畫面不讓 display link 觸發，重現開機後 0 幀，驗證看門狗
 let SIMULATE_STALL = envBool("WALL42_SIMULATE_STALL", false)
+// 測試用：閒置秒數改成「啟動後經過幾秒」，不受實際鍵盤滑鼠影響，驗證閒置降速
+let SIMULATE_IDLE = envBool("WALL42_SIMULATE_IDLE", false)
+let LAUNCHED_AT = CFAbsoluteTimeGetCurrent()
 /// log 超過這個大小就清空重來（launchd 以 append 開檔，無法由外部輪替）
 let LOG_MAX_BYTES: UInt64 = 20 * 1024 * 1024
 
@@ -96,6 +99,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var stalledSeconds = 0
     private var stallRebuilds = 0
     private var stallSimulated = false
+    /// 0 有人在用｜1 降速｜2 幾乎停住
+    private var idleLevel = 0
+    private var lastMouse = NSPoint.zero
+    private var lastMouseMove = CFAbsoluteTimeGetCurrent()
     private var reportTick = 0
     private var menuBar: MenuBarController?
     private var panel: ControlPanel?
@@ -269,15 +276,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let full = max(1, cfg.motion.fps)
         let low = max(1, min(full, cfg.motion.secondaryFps ?? max(1, full / 2)))
         var fastest = 1
+        let cap = idleFpsCap(cfg)
         for sf in surfaces {
-            let want = (surfaces.count == 1 || sf.focused) ? full : low
+            let want = min(cap, (surfaces.count == 1 || sf.focused) ? full : low)
             if sf.view.preferredFramesPerSecond != want {
                 sf.view.preferredFramesPerSecond = want
             }
             if !sf.view.isPaused { fastest = max(fastest, want) }
         }
         // 模擬跟著畫得最快的那台走；全部停著時沿用 full，恢復的第一幀不會被擋
-        world.stepInterval = 1.0 / Double(surfaces.contains { !$0.view.isPaused } ? fastest : full)
+        world.stepInterval = 1.0 / Double(surfaces.contains { !$0.view.isPaused } ? fastest : min(cap, full))
+    }
+
+    // ── 閒置降速 ─────────────────────────────────────────────
+    /// 最後一次鍵盤／滑鼠／觸控板輸入距今秒數（不需要輔助使用權限）
+    private var idleSeconds: Double {
+        if SIMULATE_IDLE { return CFAbsoluteTimeGetCurrent() - LAUNCHED_AT }
+        return CGEventSource.secondsSinceLastEventType(.combinedSessionState,
+                                                eventType: CGEventType(rawValue: ~0)!)
+    }
+
+    private func idleFpsCap(_ cfg: Config) -> Int {
+        let ic = cfg.motion.idle
+        switch idleLevel {
+        case 2: return max(1, ic?.deepFps ?? 1)
+        case 1: return max(1, ic?.slowFps ?? 5)
+        default: return Int.max
+        }
+    }
+
+    private func updateIdle() {
+        let ic = world.config.motion.idle
+        var level = 0
+        if ic?.enabled ?? true {
+            let idle = idleSeconds
+            if idle >= Double(ic?.deepAfter ?? 1800) { level = 2 }
+            else if idle >= Double(ic?.slowAfter ?? 600) { level = 1 }
+        }
+        guard level != idleLevel else { return }
+        let from = idleLevel
+        idleLevel = level
+        syncFPSIfNeeded(world.config)
+        let names = ["恢復", "閒置降速", "閒置幾乎停住"]
+        log(">>> \(names[level])（\(from)→\(level)，閒置 \(Int(idleSeconds)) 秒）fps=" +
+            surfaces.map { "\($0.view.preferredFramesPerSecond)" }.joined(separator: "/"))
     }
 
     // ── Claude session 光點的資料來源 ─────────────────────────────
@@ -347,8 +389,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateFocus() {
         guard surfaces.count > 1 else { return }
         var ids = Set<CGDirectDisplayID>()
+        // 滑鼠最近 10 秒有動才算焦點：停在另一台不動時，那台原本會一直全速
+        // （09-30 覆盤：兩台同時 30fps 佔 49% 時間，比一台降速多 1.6% CPU）
         let mouse = NSEvent.mouseLocation
-        if let sf = surfaces.first(where: { NSMouseInRect(mouse, $0.screen.frame, false) }) {
+        let now = CFAbsoluteTimeGetCurrent()
+        if mouse != lastMouse { lastMouse = mouse; lastMouseMove = now }
+        if now - lastMouseMove < 10,
+           let sf = surfaces.first(where: { NSMouseInRect(mouse, $0.screen.frame, false) }) {
             ids.insert(sf.displayID)
         }
         if let key = frontmostWindowCenter() {
@@ -500,6 +547,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         trimLogIfNeeded()
         reloadIfChanged()
         updateFocus()
+        updateIdle()
         updateSessions()
         updateActivity()
         checkSyncRequest()
@@ -779,9 +827,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if delta > 0 { stallRebuilds = 0 }
             guard periodic || stalledSeconds > 0 else { return }
             let vis = surfaces.filter { !$0.occluded }.count
-            log(String(format: "visible   screens=%d/%d  fps=%.1f [%@]  steps=%d  cpu=%.2f%%  links=%d  act=%.2f  mem=%.1fMB",
+            log(String(format: "visible   screens=%d/%d  fps=%.1f [%@]  steps=%d  cpu=%.2f%%  links=%d  act=%.2f  mem=%.1fMB  idle=%.0f",
                        vis, surfaces.count, fps, perScreen.joined(separator: "/"), steps,
-                       cpuPct, links, world.activity, mem))
+                       cpuPct, links, world.activity, mem, idleSeconds))
         }
     }
 

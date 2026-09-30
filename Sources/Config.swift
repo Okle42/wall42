@@ -115,6 +115,8 @@ struct MotionConfig: Codable {
     var streams: Int?
     /// Claude session 光點（任何 effect 都可疊加）
     var sessions: SessionsConfig?
+    /// 沒人操作時降 fps。不設＝預設值（10 分鐘 5fps、30 分鐘 1fps）
+    var idle: IdleConfig?
 
     static let `default` = MotionConfig(
         effect: "floating",
@@ -140,6 +142,17 @@ struct MotionConfig: Codable {
 }
 
 /// 每個活躍的 Claude session 對應一個常駐亮點，忙碌時在 attention 網路裡發起更多查詢。
+/// 閒置降速：螢幕常被其他 App（Chrome 播影片等）擋著不休眠，休眠停畫觸發不了，
+/// 沒人在看也整夜 30fps。改看最後一次鍵盤滑鼠輸入距今多久。一有輸入 1 秒內恢復。
+/// 低 fps 時 World.advance 把每步 dt 夾在 0.1 秒，畫面自然變成慢動作而不是跳格。
+struct IdleConfig: Codable {
+    var enabled: Bool?      // 不設＝true
+    var slowAfter: Int?     // 閒置幾秒後降速，不設＝600
+    var slowFps: Int?       // 不設＝5
+    var deepAfter: Int?     // 閒置幾秒後幾乎停住，不設＝1800
+    var deepFps: Int?       // 不設＝1（保留最後畫面、不變黑，成本接近暫停）
+}
+
 struct SessionsConfig: Codable {
     var enabled: Bool?
     /// "auto"：讀 ~/.claude/sessions/*.json（pid 還活著的才算，status=busy 算忙碌）

@@ -283,6 +283,10 @@ restore.sh 不刪 wall42 的任何東西，只停掉 wall42 常駐；MCP 要照�
 - 全螢幕 App 所在的螢幕會自動停畫（遮擋判定），另一台照畫。Spaces／Stage Manager 驗證紀錄見 `docs/bench-20260926.md`。
 - 記憶體 81MB 幾乎全是 AppKit＋Metal 框架的固定開銷，程式自己只用 0.2–0.4MB。
 - 開機登入時若比 WindowServer 早就緒，MTKView 的 display link 可能綁到失效的螢幕、永遠不畫（log 一直是 `fps=0.0 steps=0`）。看門狗偵測到「該畫卻連續 5 秒 0 幀」會自動重建畫面（log 出現 `⚠ 該畫卻連續 5 秒 0 幀`），最多連試 3 次。
+- 閒置降速：鍵盤滑鼠 10 分鐘沒動 → 5fps，30 分鐘 → 1fps（慢動作、不變黑），一有輸入 1 秒內恢復。
+  螢幕被其他 App 擋著不休眠時（例如 Chrome 播影片），這是唯一會讓它省下來的機制。調整：`motion.idle`
+  （`enabled`／`slowAfter`／`slowFps`／`deepAfter`／`deepFps`，秒與 fps，不設＝預設值）。
+- 非焦點螢幕降速：滑鼠最近 10 秒有移動、或前景 App 視窗在上面的螢幕才全速。
 - log（`~/Library/Logs/wall42.log`）常駐時每 60 秒寫一行統計，事件與異常當下寫；超過 20MB 自動清空。
 - 設定檔新增欄位一律要宣告成 Optional，否則舊設定檔缺少該 key 會讓 Codable 整份解碼失敗、使用者的設定被丟回預設值。
 
@@ -295,6 +299,7 @@ restore.sh 不刪 wall42 的任何東西，只停掉 wall42 常駐；MCP 要照�
 | `WALL42_SNAPSHOT=路徑` | 第 90 幀存一張 PNG |
 | `WALL42_DURATION=秒` | 跑幾秒後自動結束（同時開啟每秒統計，bench 腳本靠這個） |
 | `WALL42_VERBOSE=1` | 常駐時也每秒寫一行統計（預設 60 秒一行） |
+| `WALL42_SIMULATE_IDLE=1` | 閒置秒數改成「啟動後經過秒數」，驗證閒置降速用 |
 | `WALL42_SIMULATE_STALL=1` | 第一批畫面不接 renderer，重現開機 0 幀，驗證看門狗會自動重建 |
 | `WALL42_PARTICLES` / `WALL42_FPS` | 覆寫設定檔，測試用 |
 | `WALL42_ONLY_MAIN=1` | 只開主螢幕，量單螢幕基準用 |
