@@ -287,6 +287,8 @@ restore.sh 不刪 wall42 的任何東西，只停掉 wall42 常駐；MCP 要照�
   螢幕被其他 App 擋著不休眠時（例如 Chrome 播影片），這是唯一會讓它省下來的機制。調整：`motion.idle`
   （`enabled`／`slowAfter`／`slowFps`／`deepAfter`／`deepFps`，秒與 fps，不設＝預設值）。
 - 非焦點螢幕降速：滑鼠最近 10 秒有移動、或前景 App 視窗在上面的螢幕才全速。
+- log 的 `cpu=` 會隨時脈浮動（系統安靜時低時脈，同樣工作顯示的 CPU% 是忙碌時的 3–5 倍），比較消耗要看 `inst=`（每秒百萬指令）。
+  同時開兩個 wall42 量測無效：後開的會蓋住先開的，被蓋住的那個會停畫。
 - log（`~/Library/Logs/wall42.log`）常駐時每 60 秒寫一行統計，事件與異常當下寫；超過 20MB 自動清空。
 - 設定檔新增欄位一律要宣告成 Optional，否則舊設定檔缺少該 key 會讓 Codable 整份解碼失敗、使用者的設定被丟回預設值。
 

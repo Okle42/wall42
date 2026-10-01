@@ -119,6 +119,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 最近一次停畫／恢復的時間。停畫後第一份統計涵蓋停畫前的幀，不能拿來判定「仍在繪製」。
     private var lastPauseChange: CFAbsoluteTime = 0
     private var lastCPU: Double = 0
+    private var lastInstructions: UInt64?
+    private var lastWorkAt = CFAbsoluteTimeGetCurrent()
     private var configMTime: Date?
 
     func applicationDidFinishLaunching(_ note: Notification) {
@@ -755,6 +757,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         world.activity = smoothedActivity
     }
 
+    /// 累計執行指令數。CPU% 會隨時脈浮動：系統安靜時跑在約 1.7GHz，同樣工作量顯示的
+    /// CPU% 是忙碌時（約 3.4GHz）的 3–5 倍。比較前後版本的消耗要看 inst，不要看 cpu。
+    /// （ri_billed_energy 實測 0.2–3.4mW 亂跳、跟 CPU 時間對不上，不採用）
+    private func instructions() -> UInt64? {
+        var info = rusage_info_v4()
+        let ok = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+                proc_pid_rusage(getpid(), RUSAGE_INFO_V4, $0)
+            }
+        }
+        guard ok == 0 else { return nil }
+        return info.ri_instructions
+    }
+
     private func cpuSeconds() -> Double {
         var u = rusage()
         guard getrusage(RUSAGE_SELF, &u) == 0 else { return -1 }
@@ -793,6 +809,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let c = cpuSeconds()
         let cpuPct = (lastCPU > 0 && dt > 0) ? (c - lastCPU) / dt * 100.0 : 0
         lastCPU = c
+        // 指令數只在要寫 log 的那一刻結算，常駐時就是這 60 秒的平均
+        var work = ""
+        func settleWork() {
+            guard let n = instructions() else { return }
+            if let p = lastInstructions {
+                work = String(format: "  inst=%.0fM/s", Double(n &- p) / max(0.001, now - lastWorkAt) / 1e6)
+            }
+            lastInstructions = n; lastWorkAt = now
+        }
         let mem = memoryMB()
         lastFps = fps
         lastCPUPercent = cpuPct
@@ -826,10 +851,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if delta > 0 { stallRebuilds = 0 }
             guard periodic || stalledSeconds > 0 else { return }
+            settleWork()
             let vis = surfaces.filter { !$0.occluded }.count
-            log(String(format: "visible   screens=%d/%d  fps=%.1f [%@]  steps=%d  cpu=%.2f%%  links=%d  act=%.2f  mem=%.1fMB  idle=%.0f",
+            log(String(format: "visible   screens=%d/%d  fps=%.1f [%@]  steps=%d  cpu=%.2f%%  links=%d  act=%.2f  mem=%.1fMB  idle=%.0f%@",
                        vis, surfaces.count, fps, perScreen.joined(separator: "/"), steps,
-                       cpuPct, links, world.activity, mem, idleSeconds))
+                       cpuPct, links, world.activity, mem, idleSeconds, work))
         }
     }
 
