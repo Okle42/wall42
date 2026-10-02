@@ -159,7 +159,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func openReadme() {
         let url = Config.repoDir
-            .appendingPathComponent("README.md")
+            .appendingPathComponent("README.zh-TW.md")
         NSWorkspace.shared.open(url)
     }
 

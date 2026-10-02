@@ -1,316 +1,322 @@
 # wall42
 
-> 原名 **wall42**，2026-09-27 改名為 wall42。從舊版升級直接跑 `./install.sh`，
-> 偵測到舊版會自動先跑 `scripts/migrate-from-wall42.sh`（見下方「從 wall42 升級」）。
+**Living particles on your macOS desktop — and zero CPU the moment a window covers them.**
+Part of the **42 series** by [Okle42](https://github.com/Okle42) — follow for more AI tools that actually ship.
 
-macOS 桌布層動態粒子。懸浮微光粒子＋靠近連線的神經網路結構，跑在系統桌布之上、桌面圖示之下。
+[繁體中文說明](README.zh-TW.md)
 
-**被視窗完全遮擋時停止繪製，CPU 歸零、記憶體降 42%。** 這是整支程式的核心設計，不是附帶功能。
+> Formerly **wall42**, renamed to wall42 on 2026-09-27. To upgrade from the old version, just run `./install.sh` —
+> if it detects wall42 it runs `scripts/migrate-from-wall42.sh` first (see [Upgrading from wall42](#upgrading-from-wall42) below).
+
+Animated particles for the macOS wallpaper layer: softly glowing, drifting particles plus a neural-network mesh that links nearby ones. It sits above the system wallpaper and below your desktop icons.
+
+**When it's fully covered by windows, it stops drawing: CPU drops to zero and memory falls by 42%.** That's the core design of the whole program, not a side feature.
 
 ---
 
-## 使用
+## Usage
 
 ```bash
-./preset.sh         # 列出預設風格
-./preset.sh neon    # 套用（存檔即生效，畫面立刻變）
-./build.sh          # 編譯
-./wall42            # 前景跑，Ctrl-C 結束
-./install.sh        # 安裝並開機自動啟動
-./uninstall.sh      # 移除（設定檔保留，系統桌布設定從未被動過）
+./preset.sh         # list the built-in styles
+./preset.sh neon    # apply one (takes effect on save — the screen changes immediately)
+./build.sh          # build
+./wall42            # run in the foreground; Ctrl-C to quit
+./install.sh        # install and launch at login
+./uninstall.sh      # remove (your config is kept; the system wallpaper setting was never touched)
 ```
 
-設定檔 `~/.config/wall42/config.json`，**存檔即生效，不必重啟**。
+Config lives at `~/.config/wall42/config.json`. **Changes apply as soon as you save — no restart needed.**
 
 ---
 
-## 參數
+## Settings
 
-### background — 背景層
+### background — background layer
 
-| 參數 | 說明 | 建議 |
+| Key | What it does | Recommended |
 |---|---|---|
-| `mode` | `gradient` 徑向漸層／`solid` 純色 | gradient 有電影感打光，solid 最省 |
-| `centerColor` | 漸層中心色 | 深色系，太亮會蓋過粒子 |
-| `edgeColor` | 漸層邊緣色 | `#000000` |
-| `radius` | 漸層擴散範圍 | 0.6 收成一團、1.02 攤開、1.5 幾乎全滿 |
-| `solidColor` | `mode: solid` 時的顏色 | |
+| `mode` | `gradient` (radial gradient) / `solid` (flat color) | gradient gives cinematic lighting; solid is the cheapest |
+| `centerColor` | Gradient center color | Keep it dark — too bright and it drowns out the particles |
+| `edgeColor` | Gradient edge color | `#000000` |
+| `radius` | How far the gradient spreads | 0.6 is a tight glow, 1.02 spreads out, 1.5 fills almost everything |
+| `solidColor` | Color used when `mode: solid` | |
 
-### motion — 動態層
+### motion — motion layer
 
-| 參數 | 說明 | 建議 |
+| Key | What it does | Recommended |
 |---|---|---|
-| `particleCount` | **一台主螢幕面積裡的粒子數**（密度）。多螢幕時整片世界實際顆數＝此值 × 世界面積 ÷ 主螢幕面積，兩台並排就是兩倍，每台看起來密度不變 | 140。**實測 CPU 與粒子數幾乎無關**，300 顆跟 120 顆差 0.6% |
-| `fps` | 影格率上限 | 30。60Hz 螢幕只有 60/30/20/15 有效，寫 24 會被吃成 20 |
-| `secondaryFps` | 非焦點螢幕的 fps（滑鼠與前景 App 視窗都不在上面的那台）。不設＝fps 的一半；只有一台螢幕時不作用 | 15 |
-| `colorA` / `colorB` | 兩極色，粒子色相在兩者間分布 | 預設 cyan `#1ADBF5` / hot pink `#FC3D99` |
-| `speed` | 漂浮速度 | 11。太快會失去「懸浮」感 |
-| `sizeMin/Max` | 一般粒子大小 | 7–13。低於 5 白色亮核顯示不出來 |
-| `nodeRatio` | 較大「節點」的比例 | 0.20 |
-| `nodeSizeMin/Max` | 節點大小 | 17–27 |
-| `brightness` | 整體亮度倍率 | 1.0 |
-| `breathSpeed` | 呼吸明滅快慢 | 0.7 |
-| `sizeBias` | 尺寸分布偏斜。1 = 均勻，越大越多小顆 | 2.2。星空類調到 3.0 |
-| `twinkleVariance` | 每顆閃爍快慢的差異。0 = 全部同步呼吸 | 0.6。星空類調到 0.85 |
+| `particleCount` | **Particles per main-display area** (i.e. density). With multiple displays, the actual count for the whole world = this value × world area ÷ main display area — two side-by-side displays means twice as many, so each display looks equally dense | 140. **In testing, CPU is almost independent of particle count** — 300 vs. 120 particles differs by 0.6% |
+| `fps` | Frame-rate cap | 30. On a 60 Hz display only 60/30/20/15 are meaningful; 24 effectively becomes 20 |
+| `secondaryFps` | fps for non-focused displays (the ones with neither the pointer nor the frontmost app's window). Unset = half of `fps`; has no effect with a single display | 15 |
+| `colorA` / `colorB` | The two end colors; particle hues are spread between them | Defaults: cyan `#1ADBF5` / hot pink `#FC3D99` |
+| `speed` | Drift speed | 11. Go much faster and you lose the "floating" feel |
+| `sizeMin/Max` | Regular particle size | 7–13. Below 5 the white core can't show |
+| `nodeRatio` | Fraction of larger "node" particles | 0.20 |
+| `nodeSizeMin/Max` | Node size | 17–27 |
+| `brightness` | Overall brightness multiplier | 1.0 |
+| `breathSpeed` | How fast particles "breathe" (pulse in and out) | 0.7 |
+| `sizeBias` | Size-distribution skew. 1 = uniform; higher = more small particles | 2.2. Use 3.0 for starfield styles |
+| `twinkleVariance` | How much each particle's twinkle rate varies. 0 = everything breathes in sync | 0.6. Use 0.85 for starfield styles |
 
-### motion.effect — 效果（熱重載，存檔即切換）
+### motion.effect — effects (hot-reloaded; switches on save)
 
-| 值 | 行為 | 相關參數 |
+| Value | Behavior | Related keys |
 |---|---|---|
-| `floating` | 原本的懸浮微光＋連線網路 | 全部 |
-| `snow` | 雪花緩降、左右飄，落到螢幕可用區底部（避開 Dock）前淡出、從最上面重新飄下；x 在整片世界連續，會飄過接縫。散景粒子是近處大雪片，落得快晃得大 | `speed` 落速、`wind` 風速（正值往右，預設 8）、`softness` 邊緣柔和度、`bokeh.*` 近景雪片 |
-| `sand` | 沙漏：每台螢幕上方一道細沙流，沙粒加速落下、依休止角滑落堆成沙丘；整座沙堆緩緩下沉、沉到底淡出，越舊的沙越暗。忙碌度越高沙流越快 | `speed` 終端落速、`streams` 每台幾道沙流（預設 1）、`sizeMin/Max` 沙粒大小、`particleCount` 沙粒池（建議 2000 以上） |
+| `floating` | The original glowing drift + link mesh | All of them |
+| `snow` | Snowflakes fall slowly and sway side to side, fade out just before the bottom of the display's usable area (clear of the Dock), then drift down again from the top. x is continuous across the whole world, so flakes cross display seams. Bokeh particles act as big close-up flakes that fall faster and sway more | `speed` fall speed, `wind` wind speed (positive = rightward, default 8), `softness` edge softness, `bokeh.*` close-up flakes |
+| `sand` | Hourglass: a thin stream of sand pours from the top of each display; grains accelerate as they fall, slide down at the angle of repose, and build dunes. The whole pile slowly sinks and fades out at the bottom, with older sand getting darker. The busier the machine, the faster the stream | `speed` terminal fall speed, `streams` streams per display (default 1), `sizeMin/Max` grain size, `particleCount` grain pool (2000+ recommended) |
 
-`softness`（0..1）：粒子邊緣柔和度。0 是原本的銳利亮點，雪片建議 0.5。
-`background.mode` 多了 `vertical`：用整片世界算的上→下漸層（上 `edgeColor`、下 `centerColor`，`radius` 當曲線），兩台螢幕接起來沒有斷層，雪與沙的 preset 用這個。
+`softness` (0..1): particle edge softness. 0 is the original crisp point of light; 0.5 is recommended for snowflakes.
+`background.mode` also accepts `vertical`: a top-to-bottom gradient computed across the whole world (top `edgeColor`, bottom `centerColor`, with `radius` as the curve), so two displays join with no visible break. The snow and sand presets use it.
 
-### motion.sessions — Claude session 光點
+### motion.sessions — Claude session lights
 
-每個活躍的 Claude session 一個帶細外環的常駐亮點（位置由 session id 雜湊決定，同一個 session 永遠在同一處，落在某台螢幕的可用區內）。
-忙碌的 session 會持續發光，並在 attention 網路裡頻繁發起查詢（閒置時偶爾）。任何 effect 都能疊加。
+Each active Claude session gets a persistent bright point with a thin outer ring. Its position is derived from a hash of the session id, so the same session always appears in the same spot, inside the usable area of one of your displays.
+Busy sessions glow continuously and frequently fire off queries in the attention network (idle ones only occasionally). Works on top of any effect.
 
-| 參數 | 說明 |
+| Key | What it does |
 |---|---|
-| `enabled` | 開關 |
-| `source` | `auto`（預設）讀 `~/.claude/sessions/<pid>.json`，pid 活著才算、`status=busy` 算忙碌；`file` 只看 `~/.config/wall42/sessions.json` |
-| `size` | 光點大小，預設 nodeSizeMax × 1.15 |
+| `enabled` | On/off |
+| `source` | `auto` (default) reads `~/.claude/sessions/<pid>.json`; a session counts only if its pid is alive, and `status=busy` counts as busy. `file` only looks at `~/.config/wall42/sessions.json` |
+| `size` | Point size; defaults to nodeSizeMax × 1.15 |
 
-`~/.config/wall42/sessions.json` 存在時優先於 auto，格式 `{"count":5,"busy":2}` 或 `{"sessions":[{"id":"a","busy":true}]}`，由 MCP `wall42_sessions(count, busy)` 寫入；`wall42_sessions()` 不給 count 就刪掉它回到自動。
+When `~/.config/wall42/sessions.json` exists it takes precedence over auto. The format is `{"count":5,"busy":2}` or `{"sessions":[{"id":"a","busy":true}]}`, written by the MCP tool `wall42_sessions(count, busy)`; calling `wall42_sessions()` without a count deletes the file and goes back to auto.
 
-### motion.link — 連線
+### motion.link — links
 
-| 參數 | 說明 | 建議 |
+| Key | What it does | Recommended |
 |---|---|---|
-| `enabled` | 關掉就是純漂浮粒子 | |
-| `distance` | 超過這個距離不連線 | 168。加大結構更密，但連線數是 O(n²) 成長 |
-| `opacity` | 線的透明度 | 0.40。壓到 0.26 以下神經網路的結構感會消失 |
-| `boost` | 線的額外亮度倍率 | 1.35 |
-| `onlyNodes` | 只讓「節點」那些大粒子連線，做出星座圖的效果 | 星空類設 true。順帶讓 O(n²) 只在少數節點間算 |
+| `enabled` | Turn off for pure drifting particles | |
+| `distance` | No link beyond this distance | 168. Larger makes a denser structure, but link count grows O(n²) |
+| `opacity` | Line opacity | 0.40. Below 0.26 the neural-network feel disappears |
+| `boost` | Extra brightness multiplier for lines | 1.35 |
+| `onlyNodes` | Only the large "node" particles get linked, giving a constellation look | Set true for starfield styles. As a bonus, the O(n²) work only runs across a few nodes |
 
-### 連線模式（motion.link.mode）
+### Link modes (motion.link.mode)
 
-| 模式 | 行為 | 觀感 |
+| Mode | Behavior | How it feels |
 |---|---|---|
-| `proximity` | 距離內就連，連線是幾何關係的直接反映 | 固定的網＝結構圖，不像在運算 |
-| `traffic` | 一池進行中的傳輸，淡入→脈衝跑過→淡出，不斷換對象 | 有傳輸感，但兩兩隨機配對像雜訊 |
-| `attention` | **聚焦一個節點 → 向鄰近放射查詢 → 脈衝回流 → 焦點爆亮代表想通 → 轉移** | 有結構，像在思考。忙碌時多個焦點並行 |
+| `proximity` | Link anything within range; the links directly reflect the geometry | A fixed mesh — reads as a diagram, not as computation |
+| `traffic` | A pool of in-flight transfers: fade in → pulse runs across → fade out, constantly switching partners | Feels like data moving, but random pairings look like noise |
+| `attention` | **Focus on one node → fire queries at its neighbors → pulses flow back → the focus flares to mark an "aha" → move on** | Structured, like it's thinking. Several foci run in parallel when busy |
 
-`attention` 的三個階段（查詢 45%／回流 35%／下結論 20%）只是同一批線段的 alpha
-與脈衝位置在變，沒有額外幾何或 draw call——實測 CPU 比 `traffic` 還低
-（1.33% vs 4.2%，因為同時存在的線段少很多）。
+The three phases of `attention` (query 45% / return 35% / conclude 20%) only change the alpha
+and pulse position of the same set of line segments — no extra geometry or draw calls. In testing it
+actually uses less CPU than `traffic` (1.33% vs. 4.2%, because far fewer segments exist at once).
 
-### motion.pulse — 沿連線流動的脈衝
+### motion.pulse — pulses flowing along links
 
-「有東西在算」的視覺來源。線段 fragment 已有沿線位置插值，只要算一個隨時間移動的
-高斯波包，不需要額外幾何，成本是每個線段像素多一個指數運算。
+This is where the "something is computing" look comes from. The line fragment shader already interpolates
+the position along each line, so all it takes is a Gaussian wave packet that moves over time — no extra
+geometry, and the cost is one extra exponential per line pixel.
 
-| 參數 | 說明 | 建議 |
+| Key | What it does | Recommended |
 |---|---|---|
-| `speed` | 每秒跑完幾條線 | 0.35。實際速度會再乘上活動度 |
-| `strength` | 脈衝亮度 | 1.2 |
-| `width` | 高斯寬度，越小越像一個點 | 0.003 |
+| `speed` | Lines traversed per second | 0.35. The actual speed is further multiplied by activity |
+| `strength` | Pulse brightness | 1.2 |
+| `width` | Gaussian width; smaller looks more like a single dot | 0.003 |
 
-### motion.activity — 忙碌程度
+### motion.activity — how busy it looks
 
-| 參數 | 說明 |
+| Key | What it does |
 |---|---|
-| `source` | `system` 讀系統 CPU 負載／`manual` 由 MCP 指定／`off` 關閉 |
-| `manualLevel` | source=manual 時的值，0..1 |
-| `smoothing` | 0..0.99，越大變化越慢。0.85 約 6 秒爬滿，不會抽動 |
-| `minLoad` / `maxLoad` | 系統負載對應到 activity 0 與 1 的範圍 |
+| `source` | `system` reads system CPU load / `manual` is set via MCP / `off` disables it |
+| `manualLevel` | Value used when source=manual, 0..1 |
+| `smoothing` | 0..0.99; higher means slower changes. 0.85 takes about 6 seconds to reach full and never twitches |
+| `minLoad` / `maxLoad` | The system-load range mapped to activity 0 and 1 |
 
-活動度會同時影響：脈衝速度與亮度、連線亮度、粒子呼吸速度。
+Activity affects all of these at once: pulse speed and brightness, link brightness, and particle breathing speed.
 
-### motion.bokeh — 前景散景
+### motion.bokeh — foreground bokeh
 
-用大尺寸＋放緩的衰減曲線**假造失焦光斑**，不做真的 blur pass，成本跟畫小點一樣。
+**Fakes out-of-focus highlights** with large sizes and a gentler falloff curve — no real blur pass, so it costs the same as drawing small dots.
 
-| 參數 | 說明 | 建議 |
+| Key | What it does | Recommended |
 |---|---|---|
-| `ratio` | 散景粒子佔比 | 0.15 |
-| `sizeMin/Max` | 光斑大小 | 34–72 |
-| `speed` | 前景飄得比遠景快，製造視差 | 18 |
-| `dimming` | 散景壓暗多少 | 0.22。越小景深對比越強 |
+| `ratio` | Share of bokeh particles | 0.15 |
+| `sizeMin/Max` | Highlight size | 34–72 |
+| `speed` | The foreground drifts faster than the background, creating parallax | 18 |
+| `dimming` | How much bokeh is dimmed | 0.22. Lower = stronger depth-of-field contrast |
 
 ---
 
-## 多螢幕：一片星空
+## Multiple displays: one sky
 
-所有螢幕合成一個世界（依「系統設定 → 顯示器」的實際排列取聯合矩形，含上下錯位），
-粒子、連線、脈衝、attention 焦點都在整片世界裡跑，跨螢幕的線是連續的。
-模擬只有一份（每幀 step 一次），每台螢幕只是從自己的位置看同一個世界，
-所以 CPU 不會隨螢幕數倍增。粒子畫成 instanced quad，大光斑跨過接縫時兩邊各畫一半，不會突然消失。
+All displays are merged into a single world (the union rectangle of their actual arrangement in System Settings → Displays, including vertical offsets).
+Particles, links, pulses, and attention foci all live in that one world, and lines crossing between displays are continuous.
+There's only one simulation (stepped once per frame); each display simply views the same world from its own position,
+so CPU doesn't multiply with the number of displays. Particles are drawn as instanced quads, and a large highlight straddling a seam is drawn half on each side instead of popping out of existence.
 
-- `link.targetCount` 同樣依面積放大，每台螢幕的思考密度跟單螢幕時一樣
-- 背景漸層每台螢幕各一份（打光中心在各自螢幕正中）
-- 螢幕排列改變時世界重建，既有粒子依比例映射到新世界，不會整片重來
-- 遮擋暫停仍依各螢幕獨立：有任一台可見模擬就跑，全部被蓋住就整個停
+- `link.targetCount` also scales with area, so each display gets the same thinking density as a single-display setup
+- Each display gets its own background gradient (lit from its own center)
+- When the display arrangement changes, the world is rebuilt and existing particles are mapped proportionally into it — no full reset
+- Occlusion pausing is still per display: the simulation runs as long as any display is visible, and stops entirely only when all of them are covered
 
-## 實測數據（Mac mini M4 / 1920×1080 / 140 顆 / 30fps）
+## Measurements (Mac mini M4 / 1920×1080 / 140 particles / 30 fps)
 
-| 情境 | CPU（單核） | CPU（全機 10 核） | 記憶體 |
+| Scenario | CPU (one core) | CPU (whole machine, 10 cores) | Memory |
 |---|---|---|---|
-| 桌面可見 | 4.54% | 0.45% | 81.5MB |
-| **被視窗遮擋** | **0.07%** | **0.007%** | **47.4MB** |
-| 對照：什麼都不畫 | 4.44% | 0.44% | 81.3MB |
+| Desktop visible | 4.54% | 0.45% | 81.5MB |
+| **Covered by windows** | **0.07%** | **0.007%** | **47.4MB** |
+| Baseline: drawing nothing | 4.44% | 0.44% | 81.3MB |
 
-**整套視覺效果只比「什麼都不畫」多 0.10% CPU。** 成本幾乎全在 MTKView 每幀醒來的框架固定開銷，不在繪製本身——所以調粒子數、連線數、加背景漸層都不會讓它變貴。
+**The entire visual effect costs only 0.10% more CPU than drawing nothing at all.** Almost all of the cost is MTKView's fixed framework overhead of waking up every frame, not the drawing itself — so raising the particle count, adding links, or turning on the background gradient won't make it noticeably more expensive.
 
 ---
 
 ## MCP
 
-`mcp/wall42_mcp.py`　已註冊為使用者層級 MCP server（`claude mcp add --scope user wall42`）。
-控制介面就是設定檔本身——wall42 每秒檢查 mtime，所以 MCP 只要寫檔，不需要任何 IPC。
+`mcp/wall42_mcp.py` is registered as a user-scope MCP server (`claude mcp add --scope user wall42`).
+The control interface is the config file itself — wall42 checks its mtime every second, so the MCP server only needs to write the file. No IPC required.
 
-| tool | 用途 |
+| Tool | Purpose |
 |---|---|
-| `wall42_status` | 執行狀態、是否被遮擋、fps、CPU、記憶體、連線數、活動度 |
-| `wall42_list_presets` | 列出風格 |
-| `wall42_set_preset` | 切換風格（會保留目前的 activity 設定） |
-| `wall42_set_activity` | **忙碌感控制**：`manual`＋level 手動拉高、`system` 交還系統負載、`off` 關閉 |
-| `wall42_set` | 改單一設定，如 `motion.link.distance` |
-| `wall42_think` | **跑長任務前**拉高思考密度，到期自動回復 |
-| `wall42_insight` | **想通一件事的當下**觸發爆亮脈衝，1.3 秒自然衰減 |
-| `wall42_sync_wallpaper` | 把目前畫面同步成系統桌布（換風格後可重拍） |
-| `wall42_sessions` | Claude session 光點：不給 count＝自動讀 ~/.claude/sessions 並回傳偵測到的清單；給 count/busy＝外部餵數字；enable=True 在目前設定打開光點 |
+| `wall42_status` | Running state, whether it's occluded, fps, CPU, memory, link count, activity |
+| `wall42_list_presets` | List styles |
+| `wall42_set_preset` | Switch style (keeps the current activity settings) |
+| `wall42_set_activity` | **Busyness control**: `manual` + level to crank it up by hand, `system` to hand it back to system load, `off` to disable |
+| `wall42_set` | Change a single setting, e.g. `motion.link.distance` |
+| `wall42_think` | **Before a long task**, raise the thinking density; reverts automatically when it expires |
+| `wall42_insight` | **The moment something clicks**, fire a flare pulse that fades naturally over 1.3 seconds |
+| `wall42_sync_wallpaper` | Sync the current frame to the system wallpaper (re-run after changing styles) |
+| `wall42_sessions` | Claude session lights: no count = auto-read ~/.claude/sessions and return the detected list; with count/busy = feed numbers from outside; enable=True turns the lights on in the current config |
 | `wall42_control` | start / stop / restart |
 
-### AI 連動
+### Hooking it up to an AI agent
 
 ```
-跑長任務前   wall42_think(seconds=300, level=0.9)   # 到期自動回復，不必記得關
-想通的當下   wall42_insight()                        # 閃一下，1.3 秒衰減
+Before a long task   wall42_think(seconds=300, level=0.9)   # reverts on expiry, nothing to remember to turn off
+When it clicks       wall42_insight()                        # one flash, fades over 1.3 s
 ```
 
-`think` **會自動到期**是刻意的：AI 可能忘記關掉，畫面就會一直卡在全速。
-要提早收掉用 `wall42_set_activity(mode="system")`。
+`think` **expiring on its own** is deliberate: an AI agent may forget to turn it off, leaving the screen stuck at full speed.
+To end it early, call `wall42_set_activity(mode="system")`.
 
-事件走**檔案信號**（`~/.config/wall42/.signal`，原子寫入），wall42 每秒檢查一次，
-不需要 socket 或任何 IPC。信號路徑固定在 `~/.config/wall42`，不跟著 `WALL42_CONFIG`
-漂移——否則指定別的設定檔測試時就收不到指令了。
+Events use **file signals** (`~/.config/wall42/.signal`, written atomically), which wall42 checks once a second —
+no sockets or IPC of any kind. The signal path is pinned to `~/.config/wall42` and does not follow `WALL42_CONFIG`;
+otherwise, pointing it at a different config file for testing would mean it never receives commands.
 
-### 跟 cool42 的分工
+### How it divides work with cool42
 
-兩者都讀系統負載但互不依賴：**cool42 管溫度與風扇**（要不要開工），
-**wall42 管「讓人看得出機器在忙」**。AI 開始長時間運算前呼叫
-`wall42_set_activity(mode="manual", level=1.0)`，脈衝會沿連線加速流動、線條變亮；
-結束後設回 `mode="system"`。
+Both read system load, but neither depends on the other: **cool42 handles temperature and fans** (whether it's safe to start heavy work),
+while **wall42 handles "letting people see the machine is busy."** Before an AI starts a long computation, call
+`wall42_set_activity(mode="manual", level=1.0)` and pulses speed up along the links while the lines brighten;
+when it's done, set it back to `mode="system"`.
 
-## 桌布同步
+## Wallpaper sync
 
-wall42 **沒有改系統桌布設定**——它是蓋在桌布圖層之上、桌面圖示之下的一個視窗。
-好處是 `./uninstall.sh` 執行的瞬間原本的桌布就回來了，不需要還原任何東西。
-代價是兩個落差：
+wall42 **does not change your system wallpaper setting** — it's a window that sits above the wallpaper layer and below the desktop icons.
+The upside is that the moment you run `./uninstall.sh`, your original wallpaper is back, with nothing to restore.
+The trade-off is two gaps:
 
-1. 系統設定顯示的是原本那張，跟你眼睛看到的不一樣
-2. 開機到 launchd 啟動它之間的空窗期，會露出舊桌布
+1. System Settings shows your original wallpaper, which doesn't match what you actually see
+2. In the window between boot and launchd starting wall42, the old wallpaper shows through
 
 ```bash
-./sync-wallpaper.sh      # 抓目前畫面設成系統桌布，補上這兩個落差
+./sync-wallpaper.sh      # capture the current frame and set it as the system wallpaper, closing both gaps
 ```
 
-換過風格或調過顏色之後可以再跑一次重拍。原本的桌布路徑會存到
-`backup/original-wallpaper.txt`，`./uninstall.sh` 會自動還原。
+After switching styles or tweaking colors, run it again to retake the shot. Your original wallpaper path is saved to
+`backup/original-wallpaper.txt`, and `./uninstall.sh` restores it automatically.
 
-實作上是**檔案信號**：`touch ~/.config/wall42/.sync-request`，常駐實例每秒檢查到就
-擷取當前畫面。所以抓的是你此刻看到的那一幀，不是重新渲染的。
-輸出用 `wallpaper_a.png` / `wallpaper_b.png` 交替——macOS 對同一路徑的桌布會吃快取不重繪。
+Under the hood it's a **file signal**: `touch ~/.config/wall42/.sync-request`, and the running instance picks it up within a second and
+captures the current frame. So what you get is exactly the frame you're looking at, not a fresh render.
+Output alternates between `wallpaper_a.png` / `wallpaper_b.png` — macOS caches the wallpaper for a given path and won't redraw it otherwise.
 
-## 改完程式碼要重新 install
+## Reinstall after changing code
 
-常駐跑的是 `~/.local/bin/wall42`，不是專案目錄裡那份。**只跑 `./build.sh` 不會影響常駐中的實例**——
-改完程式碼要 `./install.sh` 才會生效（它會停掉舊的、換掉 binary、重新啟動）。
+What runs in the background is `~/.local/bin/wall42`, not the copy in the project directory. **Running `./build.sh` alone does not affect the running instance** —
+after changing code you need `./install.sh` for it to take effect (it stops the old one, swaps the binary, and starts it again).
 
-曾因此看到新設定被舊 binary 忽略：`onlyNodes` 沒生效，460 顆星全部互連、跑出 5000 多條線。
+This once caused new settings to be ignored by an old binary: `onlyNodes` had no effect, all 460 stars linked to each other, and it ended up drawing over 5,000 lines.
 
-## 預設風格
+## Built-in styles
 
-`./preset.sh <名稱>`　切換前會自動備份，`./preset.sh --restore` 還原。
+`./preset.sh <name>` automatically backs up your config before switching; `./preset.sh --restore` restores it.
 
-| 名稱 | 說明 |
+| Name | Description |
 |---|---|
-| `neon` | cyan / hot pink，賽博霓虹 |
-| `deepsea` | 青綠到藍，慢速，結構綿密 |
-| `amber` | 暖色琥珀，夜間不刺眼 |
-| `starfield` | 無連線，400 顆小點 |
-| `starfield2` | 星空加強版：冪次尺寸、獨立閃爍、藍白到暖白 |
-| `starfield-constellation` | 星空＋星座連線，只連亮星，約 96 條 |
-| `starfield-web` | 星空＋全連線網格，約 1000 條，較密 |
-| `neural` | AI 運算：密連線＋流動脈衝，跟著系統負載變化 |
-| `compute` | 分工運算：無霓虹、單色線、連線不斷生滅 |
-| `thinking` | **AI 思考**：聚焦→放射查詢→回流→想通爆亮 |
-| `minimal` | 純黑底、無連線、少量大光點 |
-| `snow` | 下雪：柔邊雪花＋近景大雪片，夜空垂直漸層，兩螢幕連續 |
-| `sand` | 流沙：每台螢幕一道細沙流落成沙丘，像沙漏 |
-| `sessions` | `kang` 風格＋每個 Claude session 一個帶環光點 |
+| `neon` | Cyan / hot pink, cyberpunk neon |
+| `deepsea` | Teal to blue, slow, dense structure |
+| `amber` | Warm amber, easy on the eyes at night |
+| `starfield` | No links, 400 small dots |
+| `starfield2` | Enhanced starfield: power-law sizes, independent twinkling, blue-white to warm white |
+| `starfield-constellation` | Starfield + constellation lines, bright stars only, about 96 links |
+| `starfield-web` | Starfield + full mesh, about 1,000 links, denser |
+| `neural` | AI computation: dense links + flowing pulses that follow system load |
+| `compute` | Distributed compute: no neon, monochrome lines, links constantly forming and dissolving |
+| `thinking` | **AI thinking**: focus → radiate queries → flow back → "aha" flare |
+| `minimal` | Pure black, no links, a few large points of light |
+| `snow` | Snowfall: soft-edged flakes + big close-up flakes, vertical night-sky gradient, continuous across two displays |
+| `sand` | Sand: a thin stream of sand per display piling into dunes, like an hourglass |
+| `sessions` | The `kang` style + one ringed light per Claude session |
 
-## 從 wall42 升級
+## Upgrading from wall42
 
-`scripts/migrate-from-wall42.sh` 把舊名留下的東西搬到新名，**冪等**（重跑只會跳過已完成的步驟）、
-每一步做完都驗證，刪除一律改成移進備份區 `~/.local/share/wall42-migration/<時間>/`。
+`scripts/migrate-from-wall42.sh` moves everything left under the old name to the new one. It's **idempotent** (re-running it simply skips completed steps),
+verifies each step after doing it, and never deletes anything — it moves items into a backup area, `~/.local/share/wall42-migration/<timestamp>/`, instead.
 
 ```bash
-scripts/migrate-from-wall42.sh --dry-run   # 先看會做什麼，不改任何東西
-scripts/migrate-from-wall42.sh             # 實際搬遷（./install.sh 偵測到舊版時會自動呼叫）
-./install.sh                               # 裝上 wall42 並啟動
+scripts/migrate-from-wall42.sh --dry-run   # preview what it will do without changing anything
+scripts/migrate-from-wall42.sh             # actually migrate (./install.sh calls this automatically when it detects the old version)
+./install.sh                               # install wall42 and start it
 ```
 
-| 舊（wall42） | 新（wall42） |
+| Old (wall42) | New (wall42) |
 |---|---|
 | LaunchAgent `*.wall42` | `com.kang.wall42` |
 | `~/.local/bin/wall42` | `~/.local/bin/wall42` |
-| `~/.config/wall42/`（設定、sessions.json、桌布圖） | `~/.config/wall42/` |
+| `~/.config/wall42/` (config, sessions.json, wallpaper images) | `~/.config/wall42/` |
 | `~/Library/Logs/wall42.log` | `~/Library/Logs/wall42.log` |
-| MCP server `wall42`、tool `wall42_*` | `wall42`、`wall42_*` |
-| 環境變數 `WALL42_*` | `WALL42_*` |
+| MCP server `wall42`, tools `wall42_*` | `wall42`, `wall42_*` |
+| Environment variables `WALL42_*` | `WALL42_*` |
 
-系統桌布若是之前同步出來、指向 `~/.config/wall42/` 裡的圖，搬遷時會改指新目錄的同名檔（原值先存進備份區）。
-MCP 改名後要重開 Claude Code 才會載入 `wall42`。
+If your system wallpaper was previously synced and points at an image inside `~/.config/wall42/`, the migration repoints it to the same-named file in the new directory (the original value is saved to the backup area first).
+After the MCP rename, restart Claude Code so it loads `wall42`.
 
-`./install.sh` 會先編譯、編譯成功才搬遷，編譯失敗時舊的 wall42 照常在跑。搬遷後想退回 wall42：
+`./install.sh` builds first and only migrates if the build succeeds; if the build fails, the old wall42 keeps running as before. To roll back to wall42 after migrating:
 
 ```bash
-bash ~/.local/share/wall42-migration/<時間>/restore.sh   # 搬回舊設定／執行檔／plist／log、桌布改回原值、重新載入舊常駐
+bash ~/.local/share/wall42-migration/<timestamp>/restore.sh   # moves back the old config/binary/plist/log, restores the wallpaper, reloads the old background agent
 ```
 
-restore.sh 不刪 wall42 的任何東西，只停掉 wall42 常駐；MCP 要照它最後印的提示手動改回。
+restore.sh doesn't delete anything belonging to wall42; it only stops the wall42 background agent. Revert the MCP setup by hand, following the hint it prints at the end.
 
-## 已知限制
+## Known limitations
 
-- 桌布層是非官方做法（Apple 沒有正式 API），未來 macOS 版本可能改變這一層的行為。Plash、Backdrop 等同類 app 都是同樣做法。
-- 螢幕休眠、系統睡眠、鎖定、螢幕保護程式、切換使用者時一律停畫並釋放 drawable（log 會出現 `SUSPENDED(原因)`），醒來從當下時間接續，粒子不會瞬移。
-- 全螢幕 App 所在的螢幕會自動停畫（遮擋判定），另一台照畫。Spaces／Stage Manager 驗證紀錄見 `docs/bench-20260926.md`。
-- 記憶體 81MB 幾乎全是 AppKit＋Metal 框架的固定開銷，程式自己只用 0.2–0.4MB。
-- 開機登入時若比 WindowServer 早就緒，MTKView 的 display link 可能綁到失效的螢幕、永遠不畫（log 一直是 `fps=0.0 steps=0`）。看門狗偵測到「該畫卻連續 5 秒 0 幀」會自動重建畫面（log 出現 `⚠ 該畫卻連續 5 秒 0 幀`），最多連試 3 次。
-- 閒置降速：鍵盤滑鼠 10 分鐘沒動 → 5fps，30 分鐘 → 1fps（慢動作、不變黑），一有輸入 1 秒內恢復。
-  螢幕被其他 App 擋著不休眠時（例如 Chrome 播影片），這是唯一會讓它省下來的機制。調整：`motion.idle`
-  （`enabled`／`slowAfter`／`slowFps`／`deepAfter`／`deepFps`，秒與 fps，不設＝預設值）。
-- 非焦點螢幕降速：滑鼠最近 10 秒有移動、或前景 App 視窗在上面的螢幕才全速。
-- log 的 `cpu=` 會隨時脈浮動（系統安靜時低時脈，同樣工作顯示的 CPU% 是忙碌時的 3–5 倍），比較消耗要看 `inst=`（每秒百萬指令）。
-  同時開兩個 wall42 量測無效：後開的會蓋住先開的，被蓋住的那個會停畫。
-- log（`~/Library/Logs/wall42.log`）常駐時每 60 秒寫一行統計，事件與異常當下寫；超過 20MB 自動清空。
-- 設定檔新增欄位一律要宣告成 Optional，否則舊設定檔缺少該 key 會讓 Codable 整份解碼失敗、使用者的設定被丟回預設值。
+- The wallpaper layer is an unofficial technique (Apple provides no public API for it), so future macOS versions may change how this layer behaves. Similar apps such as Plash and Backdrop work the same way.
+- Display sleep, system sleep, screen lock, the screen saver, and fast user switching all stop drawing and release the drawable (the log shows `SUSPENDED(reason)`). On wake it resumes from the current time, so particles don't teleport.
+- A display showing a full-screen app stops drawing automatically (via occlusion detection) while the other one keeps going. Spaces / Stage Manager test notes are in `docs/bench-20260926.md`.
+- The 81MB of memory is almost entirely fixed AppKit + Metal framework overhead; the program itself only uses 0.2–0.4MB.
+- If it's ready before WindowServer during login at boot, MTKView's display link can bind to a stale display and never draw (the log stays at `fps=0.0 steps=0`). A watchdog that detects "should be drawing but 0 frames for 5 seconds straight" rebuilds the view automatically (the log shows `⚠ 該畫卻連續 5 秒 0 幀`), up to 3 attempts in a row.
+- Idle slowdown: after 10 minutes with no keyboard or mouse input → 5 fps, after 30 minutes → 1 fps (slow motion, not a black screen); any input restores full speed within 1 second.
+  When another app keeps the display from sleeping (say, Chrome playing a video), this is the only mechanism that lets it save power. Tune it with `motion.idle`
+  (`enabled` / `slowAfter` / `slowFps` / `deepAfter` / `deepFps`, in seconds and fps; unset = defaults).
+- Non-focused display slowdown: only the display where the mouse moved within the last 10 seconds, or where the frontmost app's window is, runs at full speed.
+- The `cpu=` value in the log fluctuates with clock speed (when the system is quiet it runs at a lower clock, so the same work shows 3–5× the CPU% it would when busy). To compare cost, look at `inst=` (millions of instructions per second) instead.
+  Running two copies of wall42 at once for measurement doesn't work: the one launched later covers the earlier one, and the covered one stops drawing.
+- The log (`~/Library/Logs/wall42.log`) gets one stats line every 60 seconds while running in the background, with events and anomalies written as they happen; it's cleared automatically once it exceeds 20MB.
+- Any new config field must be declared Optional; otherwise an older config file missing that key makes Codable fail to decode the whole file, and the user's settings get thrown back to defaults.
 
-## 診斷開關（環境變數）
+## Diagnostic switches (environment variables)
 
-| 變數 | 用途 |
+| Variable | Purpose |
 |---|---|
-| `WALL42_FORCE_DRAW=1` | 忽略遮擋一直畫，量峰值消耗用 |
-| `WALL42_NO_DRAW=1` | 只 clear 不下 draw call，量框架底線 |
-| `WALL42_SNAPSHOT=路徑` | 第 90 幀存一張 PNG |
-| `WALL42_DURATION=秒` | 跑幾秒後自動結束（同時開啟每秒統計，bench 腳本靠這個） |
-| `WALL42_VERBOSE=1` | 常駐時也每秒寫一行統計（預設 60 秒一行） |
-| `WALL42_SIMULATE_IDLE=1` | 閒置秒數改成「啟動後經過秒數」，驗證閒置降速用 |
-| `WALL42_SIMULATE_STALL=1` | 第一批畫面不接 renderer，重現開機 0 幀，驗證看門狗會自動重建 |
-| `WALL42_PARTICLES` / `WALL42_FPS` | 覆寫設定檔，測試用 |
-| `WALL42_ONLY_MAIN=1` | 只開主螢幕，量單螢幕基準用 |
-| `WALL42_REPO=路徑` | repo 位置（presets／README／backup）。`./install.sh` 會寫進 LaunchAgent；不設就是 `~/github-repos/wall42` |
+| `WALL42_FORCE_DRAW=1` | Ignore occlusion and always draw, for measuring peak cost |
+| `WALL42_NO_DRAW=1` | Only clear, issue no draw calls, for measuring the framework baseline |
+| `WALL42_SNAPSHOT=path` | Save a PNG of frame 90 |
+| `WALL42_DURATION=seconds` | Exit automatically after this many seconds (also turns on per-second stats; the bench scripts rely on this) |
+| `WALL42_VERBOSE=1` | Write a stats line every second even in the background (default is one every 60 seconds) |
+| `WALL42_SIMULATE_IDLE=1` | Treat "seconds since launch" as idle time, for testing the idle slowdown |
+| `WALL42_SIMULATE_STALL=1` | Don't attach the renderer to the first batch of views, reproducing the 0-frame-at-boot bug to verify the watchdog rebuilds automatically |
+| `WALL42_PARTICLES` / `WALL42_FPS` | Override the config file, for testing |
+| `WALL42_ONLY_MAIN=1` | Only use the main display, for a single-display baseline |
+| `WALL42_REPO=path` | Repo location (presets / README / backup). `./install.sh` writes it into the LaunchAgent; defaults to `~/github-repos/wall42` |
 
-測試用信號（寫到 `~/.config/wall42/.signal`）：
-`{"kind":"snapshot","dir":"/路徑","tag":"x"}` 每個螢幕各存一張目前畫面（不改系統桌布）；
-`{"kind":"debug-suspend","reason":"locked","on":true}` 走跟鎖定一樣的停畫路徑。
+Test signals (written to `~/.config/wall42/.signal`):
+`{"kind":"snapshot","dir":"/path","tag":"x"}` saves one image of the current frame per display (without changing the system wallpaper);
+`{"kind":"debug-suspend","reason":"locked","on":true}` takes the same stop-drawing path as a screen lock.
 
-`./bench_cpu.sh [執行檔] [秒數] [標籤]` 暫停常駐、跑指定執行檔量自身 CPU、再把常駐開回來。
-`sudo` 版的總帳（含 WindowServer 合成成本）：`./bench_powermetrics.sh`，用法寫在檔頭。
-量測紀錄：`docs/bench-20260926.md`。
+`./bench_cpu.sh [binary] [seconds] [label]` pauses the background instance, runs the given binary to measure its own CPU, then brings the background instance back.
+For the full `sudo` accounting (including WindowServer compositing cost): `./bench_powermetrics.sh` — usage is in the file header.
+Measurement notes: `docs/bench-20260926.md`.
