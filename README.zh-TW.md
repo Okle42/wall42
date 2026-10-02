@@ -2,9 +2,6 @@
 
 [English](README.md)
 
-> 原名 **wall42**，2026-09-27 改名為 wall42。從舊版升級直接跑 `./install.sh`，
-> 偵測到舊版會自動先跑 `scripts/migrate-from-wall42.sh`（見下方「從 wall42 升級」）。
-
 macOS 桌布層動態粒子。懸浮微光粒子＋靠近連線的神經網路結構，跑在系統桌布之上、桌面圖示之下。
 
 **被視窗完全遮擋時停止繪製，CPU 歸零、記憶體降 42%。** 這是整支程式的核心設計，不是附帶功能。
@@ -246,37 +243,6 @@ wall42 **沒有改系統桌布設定**——它是蓋在桌布圖層之上、桌
 | `snow` | 下雪：柔邊雪花＋近景大雪片，夜空垂直漸層，兩螢幕連續 |
 | `sand` | 流沙：每台螢幕一道細沙流落成沙丘，像沙漏 |
 | `sessions` | `kang` 風格＋每個 Claude session 一個帶環光點 |
-
-## 從 wall42 升級
-
-`scripts/migrate-from-wall42.sh` 把舊名留下的東西搬到新名，**冪等**（重跑只會跳過已完成的步驟）、
-每一步做完都驗證，刪除一律改成移進備份區 `~/.local/share/wall42-migration/<時間>/`。
-
-```bash
-scripts/migrate-from-wall42.sh --dry-run   # 先看會做什麼，不改任何東西
-scripts/migrate-from-wall42.sh             # 實際搬遷（./install.sh 偵測到舊版時會自動呼叫）
-./install.sh                               # 裝上 wall42 並啟動
-```
-
-| 舊（wall42） | 新（wall42） |
-|---|---|
-| LaunchAgent `*.wall42` | `com.kang.wall42` |
-| `~/.local/bin/wall42` | `~/.local/bin/wall42` |
-| `~/.config/wall42/`（設定、sessions.json、桌布圖） | `~/.config/wall42/` |
-| `~/Library/Logs/wall42.log` | `~/Library/Logs/wall42.log` |
-| MCP server `wall42`、tool `wall42_*` | `wall42`、`wall42_*` |
-| 環境變數 `WALL42_*` | `WALL42_*` |
-
-系統桌布若是之前同步出來、指向 `~/.config/wall42/` 裡的圖，搬遷時會改指新目錄的同名檔（原值先存進備份區）。
-MCP 改名後要重開 Claude Code 才會載入 `wall42`。
-
-`./install.sh` 會先編譯、編譯成功才搬遷，編譯失敗時舊的 wall42 照常在跑。搬遷後想退回 wall42：
-
-```bash
-bash ~/.local/share/wall42-migration/<時間>/restore.sh   # 搬回舊設定／執行檔／plist／log、桌布改回原值、重新載入舊常駐
-```
-
-restore.sh 不刪 wall42 的任何東西，只停掉 wall42 常駐；MCP 要照它最後印的提示手動改回。
 
 ## 已知限制
 

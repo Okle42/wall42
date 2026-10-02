@@ -5,9 +5,6 @@ Part of the **42 series** by [Okle42](https://github.com/Okle42) — follow for 
 
 [繁體中文說明](README.zh-TW.md)
 
-> Formerly **wall42**, renamed to wall42 on 2026-09-27. To upgrade from the old version, just run `./install.sh` —
-> if it detects wall42 it runs `scripts/migrate-from-wall42.sh` first (see [Upgrading from wall42](#upgrading-from-wall42) below).
-
 Animated particles for the macOS wallpaper layer: softly glowing, drifting particles plus a neural-network mesh that links nearby ones. It sits above the system wallpaper and below your desktop icons.
 
 **When it's fully covered by windows, it stops drawing: CPU drops to zero and memory falls by 42%.** That's the core design of the whole program, not a side feature.
@@ -250,37 +247,6 @@ This once caused new settings to be ignored by an old binary: `onlyNodes` had no
 | `snow` | Snowfall: soft-edged flakes + big close-up flakes, vertical night-sky gradient, continuous across two displays |
 | `sand` | Sand: a thin stream of sand per display piling into dunes, like an hourglass |
 | `sessions` | The `kang` style + one ringed light per Claude session |
-
-## Upgrading from wall42
-
-`scripts/migrate-from-wall42.sh` moves everything left under the old name to the new one. It's **idempotent** (re-running it simply skips completed steps),
-verifies each step after doing it, and never deletes anything — it moves items into a backup area, `~/.local/share/wall42-migration/<timestamp>/`, instead.
-
-```bash
-scripts/migrate-from-wall42.sh --dry-run   # preview what it will do without changing anything
-scripts/migrate-from-wall42.sh             # actually migrate (./install.sh calls this automatically when it detects the old version)
-./install.sh                               # install wall42 and start it
-```
-
-| Old (wall42) | New (wall42) |
-|---|---|
-| LaunchAgent `*.wall42` | `com.kang.wall42` |
-| `~/.local/bin/wall42` | `~/.local/bin/wall42` |
-| `~/.config/wall42/` (config, sessions.json, wallpaper images) | `~/.config/wall42/` |
-| `~/Library/Logs/wall42.log` | `~/Library/Logs/wall42.log` |
-| MCP server `wall42`, tools `wall42_*` | `wall42`, `wall42_*` |
-| Environment variables `WALL42_*` | `WALL42_*` |
-
-If your system wallpaper was previously synced and points at an image inside `~/.config/wall42/`, the migration repoints it to the same-named file in the new directory (the original value is saved to the backup area first).
-After the MCP rename, restart Claude Code so it loads `wall42`.
-
-`./install.sh` builds first and only migrates if the build succeeds; if the build fails, the old wall42 keeps running as before. To roll back to wall42 after migrating:
-
-```bash
-bash ~/.local/share/wall42-migration/<timestamp>/restore.sh   # moves back the old config/binary/plist/log, restores the wallpaper, reloads the old background agent
-```
-
-restore.sh doesn't delete anything belonging to wall42; it only stops the wall42 background agent. Revert the MCP setup by hand, following the hint it prints at the end.
 
 ## Known limitations
 

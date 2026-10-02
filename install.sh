@@ -7,18 +7,8 @@ REPO="$(pwd -P)"
 BIN="$HOME/.local/bin/wall42"
 PLIST="$HOME/Library/LaunchAgents/com.kang.wall42.plist"
 
-# 先編譯：編譯失敗就停在這裡，舊版 wall42 還原封不動在跑（搬遷之後才失敗的話，桌布就沒有常駐程式了）
+# 先編譯：編譯失敗就停在這裡，目前在跑的版本原封不動
 ./build.sh
-
-# 專案原名 wall42：偵測到舊版的常駐／執行檔／設定目錄／MCP 註冊就先搬遷
-if ls "$HOME"/Library/LaunchAgents/*.wall42.plist >/dev/null 2>&1 \
-   || pgrep -x wall42 >/dev/null 2>&1 \
-   || [ -e "$HOME/.local/bin/wall42" ] \
-   || [ -d "$HOME/.config/wall42" ] \
-   || { command -v claude >/dev/null && claude mcp get wall42 >/dev/null 2>&1; }; then
-  echo "偵測到舊版 wall42，先執行搬遷…"
-  ./scripts/migrate-from-wall42.sh || { echo "搬遷失敗，安裝中止"; exit 1; }
-fi
 
 mkdir -p "$HOME/.local/bin"
 # 執行中的 binary 不能直接覆寫，先停再換

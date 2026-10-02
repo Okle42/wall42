@@ -1,7 +1,5 @@
 # 編譯產物
 /wall42
-# 改名前（原名 wall42）留下的舊編譯產物
-/wall42
 /occluder
 /ca_proto
 # 本機紀錄與備份（backup/ 內含 ~/.claude.json 備份，絕不可進版控）
