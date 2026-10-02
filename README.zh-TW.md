@@ -316,3 +316,7 @@ restore.sh 不刪 wall42 的任何東西，只停掉 wall42 常駐；MCP 要照�
 `./bench_cpu.sh [執行檔] [秒數] [標籤]` 暫停常駐、跑指定執行檔量自身 CPU、再把常駐開回來。
 `sudo` 版的總帳（含 WindowServer 合成成本）：`./bench_powermetrics.sh`，用法寫在檔頭。
 量測紀錄：`docs/bench-20260926.md`。
+
+## 授權
+
+[MIT](LICENSE) © 2026 Okle42

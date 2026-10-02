@@ -320,3 +320,7 @@ Test signals (written to `~/.config/wall42/.signal`):
 `./bench_cpu.sh [binary] [seconds] [label]` pauses the background instance, runs the given binary to measure its own CPU, then brings the background instance back.
 For the full `sudo` accounting (including WindowServer compositing cost): `./bench_powermetrics.sh` — usage is in the file header.
 Measurement notes: `docs/bench-20260926.md`.
+
+## License
+
+[MIT](LICENSE) © 2026 Okle42
